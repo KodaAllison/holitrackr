@@ -7,12 +7,13 @@ function App() {
   const [visitedCountries, setVisitedCountries] = useState<string[]>([])
 
   const toggleCountry = (countryCode: string) => {
+    console.log('Toggle country called with:', countryCode)
     setVisitedCountries(prev => {
-      if (prev.includes(countryCode)) {
-        return prev.filter(code => code !== countryCode)
-      } else {
-        return [...prev, countryCode]
-      }
+      const newState = prev.includes(countryCode)
+        ? prev.filter(code => code !== countryCode)
+        : [...prev, countryCode]
+      console.log('New visited countries:', newState)
+      return newState
     })
   }
 
