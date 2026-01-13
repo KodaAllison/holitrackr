@@ -2,9 +2,11 @@ import { useState } from 'react'
 import WorldMap from './components/WorldMap'
 import Header from './components/Header'
 import Stats from './components/Stats'
+import CountrySearch from './components/CountrySearch'
 
 function App() {
   const [visitedCountries, setVisitedCountries] = useState<string[]>([])
+  const [countries, setCountries] = useState<{ name: string; code: string }[]>([])
 
   const toggleCountry = (countryCode: string) => {
     console.log('Toggle country called with:', countryCode)
@@ -21,9 +23,20 @@ function App() {
     <div className="min-h-screen bg-gray-50">
       <Header />
       <Stats visitedCount={visitedCountries.length} />
+      
+      {/* Search Bar */}
+      <div className="container mx-auto px-4 py-4">
+        <CountrySearch 
+          countries={countries}
+          visitedCountries={visitedCountries}
+          onCountrySelect={toggleCountry}
+        />
+      </div>
+
       <WorldMap 
         visitedCountries={visitedCountries} 
-        onCountryClick={toggleCountry} 
+        onCountryClick={toggleCountry}
+        onCountriesLoaded={setCountries}
       />
     </div>
   )
