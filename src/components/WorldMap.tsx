@@ -13,6 +13,12 @@ interface WorldMapProps {
 export default function WorldMap({ visitedCountries, onCountryClick, onCountriesLoaded }: WorldMapProps) {
   const [geoData, setGeoData] = useState<FeatureCollection | null>(null)
   const geoJsonRef = useRef<LeafletGeoJSON | null>(null)
+  const visitedCountriesRef = useRef<string[]>(visitedCountries)
+  
+  // Keep ref in sync with prop
+  useEffect(() => {
+    visitedCountriesRef.current = visitedCountries
+  }, [visitedCountries])
 
   useEffect(() => {
     // Load GeoJSON data from a reliable source
@@ -86,16 +92,23 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
         })
       },
       mouseout: () => {
-        layer.setStyle(getCountryStyle(feature))
+        // Use ref to get current visited state
+        const isCurrentlyVisited = countryCode && visitedCountriesRef.current.includes(countryCode)
+        layer.setStyle({
+          fillColor: isCurrentlyVisited ? '#10b981' : '#e5e7eb',
+          fillOpacity: isCurrentlyVisited ? 0.7 : 0.5,
+          weight: 1,
+        })
       },
-      click: () => {
+      click: (e: any) => {
+        // Remove focus outline after click
+        if (e.target) {
+          e.target.blur()
+        }
+        
         if (countryCode) {
           console.log('Country clicked:', countryName, 'Code:', countryCode)
           onCountryClick(countryCode as string)
-          // Update the style immediately after click
-          setTimeout(() => {
-            layer.setStyle(getCountryStyle(feature))
-          }, 0)
         } else {
           console.warn('No country code found for:', countryName)
         }

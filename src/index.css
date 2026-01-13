@@ -29,6 +29,12 @@ code {
 /* Country hover cursor */
 .leaflet-interactive {
   cursor: pointer !important;
+  outline: none !important;
+}
+
+/* Remove focus outline from map elements */
+.leaflet-interactive:focus {
+  outline: none !important;
 }
 
 /* Custom tooltip styling */
