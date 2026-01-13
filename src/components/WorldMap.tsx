@@ -33,8 +33,7 @@ export default function WorldMap({ visitedCountries, onCountryClick }: WorldMapP
 
   const getCountryStyle = (feature?: Feature<Geometry, GeoJsonProperties>): PathOptions => {
     const countryCode = 
-    feature?.properties?.['ISO3166-1-Alpha-3'] ||
-    feature?.properties?.['ISO3166-1-Alpha-2']  
+    feature?.properties?.['ISO3166-1-Alpha-3'] 
     
     const isVisited = countryCode && visitedCountries.includes(countryCode as string)
     
