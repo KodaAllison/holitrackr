@@ -7,9 +7,10 @@ import type { GeoJSON as LeafletGeoJSON } from 'leaflet'
 interface WorldMapProps {
   visitedCountries: string[]
   onCountryClick: (countryCode: string) => void
+  onCountriesLoaded?: (countries: { name: string; code: string }[]) => void
 }
 
-export default function WorldMap({ visitedCountries, onCountryClick }: WorldMapProps) {
+export default function WorldMap({ visitedCountries, onCountryClick, onCountriesLoaded }: WorldMapProps) {
   const [geoData, setGeoData] = useState<FeatureCollection | null>(null)
   const geoJsonRef = useRef<LeafletGeoJSON | null>(null)
 
@@ -20,6 +21,19 @@ export default function WorldMap({ visitedCountries, onCountryClick }: WorldMapP
       .then(data => {
         console.log('GeoJSON loaded successfully', data)
         setGeoData(data)
+        
+        // Extract country list for search
+        if (onCountriesLoaded && data.features) {
+          const countries = data.features
+            .map((feature: any) => ({
+              name: feature.properties?.name || feature.properties?.ADMIN || 'Unknown',
+              code: feature.properties?.['ISO3166-1-Alpha-3'] || ''
+            }))
+            .filter((c: any) => c.code && c.name !== 'Unknown')
+            .sort((a: any, b: any) => a.name.localeCompare(b.name))
+          
+          onCountriesLoaded(countries)
+        }
       })
       .catch(error => {
         console.error('Error loading GeoJSON:', error)
@@ -29,7 +43,7 @@ export default function WorldMap({ visitedCountries, onCountryClick }: WorldMapP
           .then(data => setGeoData(data))
           .catch(err => console.error('Fallback also failed:', err))
       })
-  }, [])
+  }, [onCountriesLoaded])
 
   const getCountryStyle = (feature?: Feature<Geometry, GeoJsonProperties>): PathOptions => {
     const countryCode = 
@@ -49,13 +63,20 @@ export default function WorldMap({ visitedCountries, onCountryClick }: WorldMapP
     const countryName = feature.properties?.name || feature.properties?.ADMIN || 'Unknown'
     
     // Check all possible property names for country code
-    const countryCode = 
-      feature.properties?.['ISO3166-1-Alpha-3'] 
+    const countryCode = feature.properties?.['ISO3166-1-Alpha-3']
     
     // Log first feature to see structure
     if (!countryCode) {
       console.log('Missing code for:', countryName, 'Properties:', feature.properties)
     }
+    
+    // Bind tooltip that shows automatically on hover
+    console.log('Binding tooltip for:', countryName)
+    layer.bindTooltip(countryName, {
+      permanent: false,
+      sticky: true,
+      opacity: 1
+    })
     
     layer.on({
       mouseover: () => {
@@ -80,13 +101,6 @@ export default function WorldMap({ visitedCountries, onCountryClick }: WorldMapP
         }
       },
     })
-
-    layer.bindPopup(`
-      <div class="text-center">
-        <h3 class="font-bold text-lg">${countryName}</h3>
-        <p class="text-sm text-gray-600">Click to mark as ${visitedCountries.includes(countryCode as string) ? 'not visited' : 'visited'}</p>
-      </div>
-    `)
   }
 
   // Re-style all layers when visitedCountries changes
