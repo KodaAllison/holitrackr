@@ -134,8 +134,7 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
   }
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-4xl">
-      <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
+    <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 h-full min-h-0 flex flex-col">
         <MapContainer
           center={[20, 0]}
           zoom={2}
@@ -156,7 +155,6 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
             onEachFeature={onEachCountry}
           />
         </MapContainer>
-      </div>
     </div>
   )
 }
