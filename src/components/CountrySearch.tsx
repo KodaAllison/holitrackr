@@ -1,9 +1,5 @@
 import { useState, useEffect } from 'react'
-
-interface Country {
-  name: string
-  code: string
-}
+import type { Country } from '../types'
 
 interface CountrySearchProps {
   countries: Country[]

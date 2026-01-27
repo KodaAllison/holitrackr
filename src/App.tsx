@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { Country } from './types'
 import WorldMap from './components/WorldMap'
 import Header from './components/Header'
 import Stats from './components/Stats'
@@ -6,7 +7,7 @@ import CountrySearch from './components/CountrySearch'
 
 function App() {
   const [visitedCountries, setVisitedCountries] = useState<string[]>([])
-  const [countries, setCountries] = useState<{ name: string; code: string }[]>([])
+  const [countries, setCountries] = useState<Country[]>([])
 
   const toggleCountry = (countryCode: string) => {
     console.log('Toggle country called with:', countryCode)

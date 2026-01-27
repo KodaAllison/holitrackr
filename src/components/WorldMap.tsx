@@ -3,11 +3,12 @@ import { useEffect, useState, useRef } from 'react'
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry } from 'geojson'
 import type { PathOptions } from 'leaflet'
 import type { GeoJSON as LeafletGeoJSON } from 'leaflet'
+import type { Country } from '../types'
 
 interface WorldMapProps {
   visitedCountries: string[]
   onCountryClick: (countryCode: string) => void
-  onCountriesLoaded?: (countries: { name: string; code: string }[]) => void
+  onCountriesLoaded?: (countries: Country[]) => void
 }
 
 export default function WorldMap({ visitedCountries, onCountryClick, onCountriesLoaded }: WorldMapProps) {
@@ -101,10 +102,6 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
         })
       },
       click: (e: any) => {
-        // Remove focus outline after click
-        if (e.target) {
-          e.target.blur()
-        }
         
         if (countryCode) {
           console.log('Country clicked:', countryName, 'Code:', countryCode)
