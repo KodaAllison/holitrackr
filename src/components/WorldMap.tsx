@@ -134,17 +134,20 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
   }
 
   return (
-    <div className="container mx-auto px-4 py-6">
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+    <div className="container mx-auto px-4 py-6 max-w-4xl">
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
         <MapContainer
           center={[20, 0]}
           zoom={2}
-          style={{ height: '600px', width: '100%' }}
+          style={{ height: '420px', width: '100%' }}
           scrollWheelZoom={true}
+          maxBounds={[[-85, -180], [85, 180]]}
+          maxBoundsViscosity={1}
         >
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            noWrap={true}
           />
           <GeoJSON
             ref={geoJsonRef}
