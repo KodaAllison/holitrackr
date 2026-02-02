@@ -26,7 +26,6 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
     fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
       .then(response => response.json())
       .then(data => {
-        console.log('GeoJSON loaded successfully', data)
         setGeoData(data)
         
         // Extract country list for search
@@ -72,13 +71,7 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
     // Check all possible property names for country code
     const countryCode = feature.properties?.['ISO3166-1-Alpha-3']
     
-    // Log first feature to see structure
-    if (!countryCode) {
-      console.log('Missing code for:', countryName, 'Properties:', feature.properties)
-    }
-    
     // Bind tooltip that shows automatically on hover
-    console.log('Binding tooltip for:', countryName)
     layer.bindTooltip(countryName, {
       permanent: false,
       sticky: true,
@@ -101,13 +94,9 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
           weight: 1,
         })
       },
-      click: (e: any) => {
-        
+      click: () => {
         if (countryCode) {
-          console.log('Country clicked:', countryName, 'Code:', countryCode)
           onCountryClick(countryCode as string)
-        } else {
-          console.warn('No country code found for:', countryName)
         }
       },
     })
@@ -115,7 +104,6 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
 
   // Re-style all layers when visitedCountries changes
   useEffect(() => {
-    console.log('Visited countries updated:', visitedCountries)
     if (geoJsonRef.current) {
       geoJsonRef.current.eachLayer((layer: any) => {
         if (layer.feature) {

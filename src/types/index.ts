@@ -1,1 +1,1 @@
-export type { Country } from './country'
+export type { Country } from './country.ts'
