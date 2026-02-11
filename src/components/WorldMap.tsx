@@ -3,23 +3,28 @@ import { useEffect, useState, useRef } from 'react'
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry } from 'geojson'
 import type { PathOptions } from 'leaflet'
 import type { GeoJSON as LeafletGeoJSON } from 'leaflet'
-import type { Country } from '../types'
+import type { Country, VisitedCountry } from '../types'
 
 interface WorldMapProps {
-  visitedCountries: string[]
-  onCountryClick: (countryCode: string) => void
+  visitedCountries: VisitedCountry[]
+  onCountryClick: (countryCode: string, countryName: string) => void
   onCountriesLoaded?: (countries: Country[]) => void
 }
 
 export default function WorldMap({ visitedCountries, onCountryClick, onCountriesLoaded }: WorldMapProps) {
   const [geoData, setGeoData] = useState<FeatureCollection | null>(null)
   const geoJsonRef = useRef<LeafletGeoJSON | null>(null)
-  const visitedCountriesRef = useRef<string[]>(visitedCountries)
-  
+  const visitedCountriesRef = useRef<VisitedCountry[]>(visitedCountries)
+
   // Keep ref in sync with prop
   useEffect(() => {
     visitedCountriesRef.current = visitedCountries
   }, [visitedCountries])
+
+  const isCountryVisited = (code: string, name: string) =>
+    visitedCountriesRef.current.some(
+      v => v.code === code && v.name === name
+    )
 
   useEffect(() => {
     // Load GeoJSON data from a reliable source
@@ -33,7 +38,10 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
           const countries = data.features
             .map((feature: any) => ({
               name: feature.properties?.name || feature.properties?.ADMIN || 'Unknown',
-              code: feature.properties?.['ISO3166-1-Alpha-3'] || ''
+              code:
+                feature.properties?.['ISO3166-1-Alpha-3'] ||
+                feature.properties?.ISO_A3 ||
+                '',
             }))
             .filter((c: any) => c.code && c.name !== 'Unknown')
             .sort((a: any, b: any) => a.name.localeCompare(b.name))
@@ -52,10 +60,18 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
   }, [onCountriesLoaded])
 
   const getCountryStyle = (feature?: Feature<Geometry, GeoJsonProperties>): PathOptions => {
-    const countryCode = 
-    feature?.properties?.['ISO3166-1-Alpha-3'] 
-    
-    const isVisited = countryCode && visitedCountries.includes(countryCode as string)
+    const countryCode =
+      feature?.properties?.['ISO3166-1-Alpha-3'] ||
+      feature?.properties?.ISO_A3
+    const countryName =
+      feature?.properties?.name || feature?.properties?.ADMIN || ''
+
+    const isVisited =
+      countryCode &&
+      countryName &&
+      visitedCountries.some(
+        v => v.code === countryCode && v.name === countryName
+      )
     
     return {
       fillColor: isVisited ? '#10b981' : '#e5e7eb',
@@ -66,10 +82,12 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
   }
 
   const onEachCountry = (feature: Feature<Geometry, GeoJsonProperties>, layer: any) => {
-    const countryName = feature.properties?.name || feature.properties?.ADMIN || 'Unknown'
-    
-    // Check all possible property names for country code
-    const countryCode = feature.properties?.['ISO3166-1-Alpha-3']
+    const countryName =
+      feature.properties?.name || feature.properties?.ADMIN || 'Unknown'
+
+    const countryCode =
+      feature.properties?.['ISO3166-1-Alpha-3'] ||
+      feature.properties?.ISO_A3
     
     // Bind tooltip that shows automatically on hover
     layer.bindTooltip(countryName, {
@@ -86,8 +104,8 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
         })
       },
       mouseout: () => {
-        // Use ref to get current visited state
-        const isCurrentlyVisited = countryCode && visitedCountriesRef.current.includes(countryCode)
+        const isCurrentlyVisited =
+          countryCode && isCountryVisited(countryCode, countryName)
         layer.setStyle({
           fillColor: isCurrentlyVisited ? '#10b981' : '#e5e7eb',
           fillOpacity: isCurrentlyVisited ? 0.7 : 0.5,
@@ -95,8 +113,8 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
         })
       },
       click: () => {
-        if (countryCode) {
-          onCountryClick(countryCode as string)
+        if (countryCode && countryName !== 'Unknown') {
+          onCountryClick(countryCode as string, countryName)
         }
       },
     })

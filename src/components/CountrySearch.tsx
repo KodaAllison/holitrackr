@@ -3,8 +3,8 @@ import type { Country } from '../types'
 
 interface CountrySearchProps {
   countries: Country[]
-  visitedCountries: string[]
-  onCountrySelect: (countryCode: string) => void
+  visitedCountries: Array<{ code: string; name: string }>
+  onCountrySelect: (country: Country) => void
 }
 
 export default function CountrySearch({ 
@@ -34,7 +34,7 @@ export default function CountrySearch({
   }, [searchTerm, countries])
 
   const handleSelect = (country: Country) => {
-    onCountrySelect(country.code)
+    onCountrySelect(country)
     setSearchTerm('')
     setShowDropdown(false)
   }
@@ -67,7 +67,9 @@ export default function CountrySearch({
       {showDropdown && (
         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {filteredCountries.map((country) => {
-            const isVisited = visitedCountries.includes(country.code)
+            const isVisited = visitedCountries.some(
+              v => v.code === country.code && v.name === country.name
+            )
             return (
               <button
                 key={country.code}

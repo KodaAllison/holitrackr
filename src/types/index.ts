@@ -1,1 +1,1 @@
-export type { Country } from './country.ts'
+export type { Country, VisitedCountry } from './country.ts'

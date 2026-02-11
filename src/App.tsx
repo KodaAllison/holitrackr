@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Country } from './types'
+import type { Country, VisitedCountry } from './types'
 import WorldMap from './components/WorldMap'
 import Header from './components/Header'
 import Stats from './components/Stats'
@@ -7,15 +7,17 @@ import CountrySearch from './components/CountrySearch'
 import VisitedCountriesList from './components/VisitedCountriesList.tsx'
 
 function App() {
-  const [visitedCountries, setVisitedCountries] = useState<string[]>([])
+  const [visitedCountries, setVisitedCountries] = useState<VisitedCountry[]>([])
   const [countries, setCountries] = useState<Country[]>([])
 
-  const toggleCountry = (countryCode: string) => {
+  const toggleCountry = (country: VisitedCountry | Country) => {
     setVisitedCountries(prev => {
-      const newState = prev.includes(countryCode)
-        ? prev.filter(code => code !== countryCode)
-        : [...prev, countryCode]
-      return newState
+      const isVisited = prev.some(
+        v => v.code === country.code && v.name === country.name
+      )
+      return isVisited
+        ? prev.filter(v => !(v.code === country.code && v.name === country.name))
+        : [...prev, country]
     })
   }
 
@@ -38,14 +40,13 @@ function App() {
           <div className="lg:col-span-2">
             <WorldMap 
               visitedCountries={visitedCountries} 
-              onCountryClick={toggleCountry}
+              onCountryClick={(code, name) => toggleCountry({ code, name })}
               onCountriesLoaded={setCountries}
             />
           </div>
           <div className="h-[420px] max-h-[420px]">
             <VisitedCountriesList
-              visitedCountryCodes={visitedCountries}
-              countries={countries}
+              visitedCountries={visitedCountries}
               onRemove={toggleCountry}
             />
           </div>
