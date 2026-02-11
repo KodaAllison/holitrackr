@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Country, VisitedCountry } from './types'
 import WorldMap from './components/WorldMap'
 import Header from './components/Header'
+import Footer from './components/Footer'
 import Stats from './components/Stats'
 import CountrySearch from './components/CountrySearch'
 import VisitedCountriesList from './components/VisitedCountriesList.tsx'
@@ -22,7 +23,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header />
       <Stats visitedCount={visitedCountries.length} />
       
@@ -44,7 +45,7 @@ function App() {
               onCountriesLoaded={setCountries}
             />
           </div>
-          <div className="h-[420px] max-h-[420px]">
+          <div className="h-[420px] max-h-[420px] mb-4">
             <VisitedCountriesList
               visitedCountries={visitedCountries}
               onRemove={toggleCountry}
@@ -52,6 +53,7 @@ function App() {
           </div>
         </div>
       </div>
+      <Footer />
     </div>
   )
 }
