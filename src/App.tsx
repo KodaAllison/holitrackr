@@ -45,7 +45,11 @@ function App() {
   }
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(visitedCountries))
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(visitedCountries))
+    } catch (err) {
+      console.warn('Failed to persist visited countries:', err)
+    }
   }, [visitedCountries])
 
   return (
