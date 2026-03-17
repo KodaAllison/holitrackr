@@ -8,13 +8,13 @@ import { auth, authConfig } from './src/lib/auth';
 async function createServer() {
   const app = express();
 
-  // Run database migrations so tables exist
   try {
     const { runMigrations } = await getMigrations(authConfig);
     await runMigrations();
     console.log('Database migrations complete');
   } catch (err) {
-    console.warn('Migration:', err);
+    console.error('Database migration failed — aborting startup:', err);
+    process.exit(1);
   }
 
   // Better Auth API routes - Express v5 uses *splat for catch-all
@@ -25,7 +25,7 @@ async function createServer() {
     } catch (err) {
       console.error('Auth error:', err);
       if (!res.headersSent) {
-        res.status(500).json({ error: err instanceof Error ? err.message : 'Auth failed' });
+        res.status(500).json({ error: 'Authentication failed' });
       }
     }
   });
@@ -36,10 +36,9 @@ async function createServer() {
     appType: 'spa',
   });
 
-  // Use vite's connect instance as middleware
   app.use(vite.middlewares);
 
-  const port = 5173;
+  const port = Number(process.env.PORT) || 5173;
   app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
   });

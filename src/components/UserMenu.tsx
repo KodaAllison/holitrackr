@@ -12,8 +12,10 @@ export default function UserMenu({ user }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const handleSignOut = async () => {
-    await authClient.signOut();
-    window.location.reload();
+    const { error } = await authClient.signOut();
+    if (error) {
+      console.error('Sign out failed:', error);
+    }
   };
 
   return (

@@ -12,13 +12,10 @@ import { useSession } from './lib/auth-client'
 
 const STORAGE_KEY_PREFIX = 'holitrackr-visited-countries'
 
-function loadVisitedCountries(userId?: string): VisitedCountry[] {
-  if (!userId) return []
+function parseCountries(raw: string | null): VisitedCountry[] {
+  if (!raw) return []
   try {
-    const storageKey = `${STORAGE_KEY_PREFIX}-${userId}`
-    const stored = localStorage.getItem(storageKey)
-    if (!stored) return []
-    const parsed = JSON.parse(stored) as unknown
+    const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return []
     return parsed.filter(
       (c): c is VisitedCountry =>
@@ -27,6 +24,27 @@ function loadVisitedCountries(userId?: string): VisitedCountry[] {
         typeof (c as VisitedCountry).code === 'string' &&
         typeof (c as VisitedCountry).name === 'string'
     )
+  } catch {
+    return []
+  }
+}
+
+function loadVisitedCountries(userId?: string): VisitedCountry[] {
+  if (!userId) return []
+  try {
+    const userKey = `${STORAGE_KEY_PREFIX}-${userId}`
+    const stored = localStorage.getItem(userKey)
+    if (stored) return parseCountries(stored)
+
+    // One-time migration from legacy key (pre-auth)
+    const legacy = parseCountries(localStorage.getItem(STORAGE_KEY_PREFIX))
+    if (legacy.length > 0) {
+      localStorage.setItem(userKey, JSON.stringify(legacy))
+      localStorage.removeItem(STORAGE_KEY_PREFIX)
+      return legacy
+    }
+
+    return []
   } catch {
     return []
   }

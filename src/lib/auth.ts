@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import Database from "better-sqlite3";
+import path from "path";
 
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
@@ -12,12 +13,17 @@ function getRequiredEnv(name: string): string {
 }
 
 const baseURL = process.env.BETTER_AUTH_URL || "http://localhost:5173";
+const secret = getRequiredEnv("BETTER_AUTH_SECRET");
 const googleClientId = getRequiredEnv("GOOGLE_CLIENT_ID");
 const googleClientSecret = getRequiredEnv("GOOGLE_CLIENT_SECRET");
+const dbPath = process.env.AUTH_DB_PATH
+  ? path.resolve(process.env.AUTH_DB_PATH)
+  : path.resolve("./auth.db");
 
 const authConfig = {
-  database: new Database("./auth.db"),
+  database: new Database(dbPath),
   baseURL,
+  secret,
   socialProviders: {
     google: {
       clientId: googleClientId,

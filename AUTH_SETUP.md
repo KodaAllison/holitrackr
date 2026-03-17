@@ -92,11 +92,15 @@ Better Auth provides these endpoints automatically:
 
 ## Production Deployment
 
+> **Important**: The default SQLite adapter (`auth.db`) is for **local development only**. It uses a local file and a native Node addon (`better-sqlite3`) which will not work on serverless platforms like Vercel. Before deploying to production, replace it with a persistent cloud database adapter (e.g. [Turso/LibSQL](https://www.better-auth.com/docs/adapters/turso), [Neon/Postgres](https://www.better-auth.com/docs/adapters/neon), or [Prisma](https://www.better-auth.com/docs/adapters/prisma)).
+
 When deploying to production:
 
-1. Update your `.env` with production values:
-   - Set `BETTER_AUTH_URL` to your production domain
-2. Add your production domain to Google OAuth:
+1. Replace the SQLite adapter in `src/lib/auth.ts` with a serverless-compatible adapter and set the appropriate database connection env var.
+2. Update your `.env` with production values:
+   - Set `BETTER_AUTH_URL` and `VITE_BETTER_AUTH_URL` to your production domain
+   - Set `BETTER_AUTH_SECRET` to a strong random secret (`openssl rand -base64 32`)
+3. Add your production domain to Google OAuth:
    - Authorized JavaScript origins: `https://yourdomain.com`
    - Authorized redirect URIs: `https://yourdomain.com/api/auth/callback/google`
-3. Ensure `.env` is not committed to version control (it's in `.gitignore`)
+4. Ensure `.env` is not committed to version control (it's in `.gitignore`)

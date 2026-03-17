@@ -10,12 +10,16 @@ export default function AuthForm() {
     setLoading(true);
 
     try {
-      await authClient.signIn.social({
+      const result = await authClient.signIn.social({
         provider: "google",
         callbackURL: "/",
       });
+      if (result?.error) {
+        setError(result.error.message ?? 'Authentication failed');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Authentication failed');
+    } finally {
       setLoading(false);
     }
   };
