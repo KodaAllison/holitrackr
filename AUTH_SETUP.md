@@ -40,7 +40,10 @@ cp .env.example .env
 ```env
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-google-client-secret
+BETTER_AUTH_SECRET=your-secret-key-here
 BETTER_AUTH_URL=http://localhost:5173
+VITE_BETTER_AUTH_URL=http://localhost:5173
+DATABASE_URL=postgres://user:password@localhost:5432/holitrackr
 ```
 
 ### 3. Run the App
@@ -61,7 +64,7 @@ This will start the Express server with Vite middleware on http://localhost:5173
 
 ### Backend
 - `server.ts`: Express server that handles auth API routes and serves the Vite app
-- `src/lib/auth.ts`: Better Auth configuration (auto-creates a local database for sessions)
+- `src/lib/auth.ts`: Better Auth configuration using PostgreSQL for users, accounts, and sessions
 
 ### Frontend
 - `src/lib/auth-client.ts`: Client-side auth utilities
@@ -72,7 +75,7 @@ This will start the Express server with Vite middleware on http://localhost:5173
 ### Data Storage
 - Each user's visited countries are stored in localStorage with a user-specific key
 - Format: `holitrackr-visited-countries-{userId}`
-- Better Auth automatically manages a local SQLite database (`auth.db`) for OAuth accounts and sessions
+- Better Auth stores OAuth accounts and sessions in PostgreSQL (configured via `DATABASE_URL`)
 
 ## API Routes
 
@@ -92,15 +95,15 @@ Better Auth provides these endpoints automatically:
 
 ## Production Deployment
 
-> **Important**: The default SQLite adapter (`auth.db`) is for **local development only**. It uses a local file and a native Node addon (`better-sqlite3`) which will not work on serverless platforms like Vercel. Before deploying to production, replace it with a persistent cloud database adapter (e.g. [Turso/LibSQL](https://www.better-auth.com/docs/adapters/turso), [Neon/Postgres](https://www.better-auth.com/docs/adapters/neon), or [Prisma](https://www.better-auth.com/docs/adapters/prisma)).
+This project is configured for PostgreSQL so it can run on serverless platforms like Vercel.
 
 When deploying to production:
 
-1. Replace the SQLite adapter in `src/lib/auth.ts` with a serverless-compatible adapter and set the appropriate database connection env var.
-2. Update your `.env` with production values:
+1. Set your production environment variables:
+   - Set `DATABASE_URL` to your managed PostgreSQL connection string (e.g. Neon/Supabase/Railway)
    - Set `BETTER_AUTH_URL` and `VITE_BETTER_AUTH_URL` to your production domain
    - Set `BETTER_AUTH_SECRET` to a strong random secret (`openssl rand -base64 32`)
-3. Add your production domain to Google OAuth:
+2. Add your production domain to Google OAuth:
    - Authorized JavaScript origins: `https://yourdomain.com`
    - Authorized redirect URIs: `https://yourdomain.com/api/auth/callback/google`
-4. Ensure `.env` is not committed to version control (it's in `.gitignore`)
+3. Ensure `.env` is not committed to version control (it's in `.gitignore`)

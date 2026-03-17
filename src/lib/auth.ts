@@ -1,6 +1,5 @@
 import { betterAuth } from "better-auth";
-import Database from "better-sqlite3";
-import path from "path";
+import { Pool } from "pg";
 
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
@@ -16,12 +15,15 @@ const baseURL = process.env.BETTER_AUTH_URL || "http://localhost:5173";
 const secret = getRequiredEnv("BETTER_AUTH_SECRET");
 const googleClientId = getRequiredEnv("GOOGLE_CLIENT_ID");
 const googleClientSecret = getRequiredEnv("GOOGLE_CLIENT_SECRET");
-const dbPath = process.env.AUTH_DB_PATH
-  ? path.resolve(process.env.AUTH_DB_PATH)
-  : path.resolve("./auth.db");
+const databaseUrl = getRequiredEnv("DATABASE_URL");
 
 const authConfig = {
-  database: new Database(dbPath),
+  database: new Pool({
+    connectionString: databaseUrl,
+    ssl: databaseUrl.includes("localhost")
+      ? undefined
+      : { rejectUnauthorized: false },
+  }),
   baseURL,
   secret,
   socialProviders: {
