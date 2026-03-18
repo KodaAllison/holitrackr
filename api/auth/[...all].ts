@@ -1,6 +1,43 @@
-import { auth } from "../../src/lib/auth";
+import { betterAuth } from "better-auth";
 import { toNodeHandler } from "better-auth/node";
+import { Pool } from "pg";
 import type { IncomingMessage, ServerResponse } from "http";
+
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`[auth] Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+const baseURL = process.env.BETTER_AUTH_URL || "http://localhost:5173";
+const secret = getRequiredEnv("BETTER_AUTH_SECRET");
+const googleClientId = getRequiredEnv("GOOGLE_CLIENT_ID");
+const googleClientSecret = getRequiredEnv("GOOGLE_CLIENT_SECRET");
+const databaseUrl = getRequiredEnv("DATABASE_URL");
+
+const auth = betterAuth({
+  database: new Pool({
+    connectionString: databaseUrl,
+    ssl: databaseUrl.includes("localhost")
+      ? undefined
+      : { rejectUnauthorized: false },
+  }),
+  baseURL,
+  secret,
+  socialProviders: {
+    google: {
+      clientId: googleClientId,
+      clientSecret: googleClientSecret,
+    },
+  },
+  session: {
+    expiresIn: 60 * 60 * 24 * 7,
+    updateAge: 60 * 60 * 24,
+  },
+  trustedOrigins: [baseURL],
+});
 
 const handler = toNodeHandler(auth);
 
