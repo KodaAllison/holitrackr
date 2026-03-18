@@ -10,8 +10,22 @@ export default async function (req: IncomingMessage, res: ServerResponse) {
   } catch (err) {
     console.error("Auth handler error:", err);
     if (!res.headersSent) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Authentication failed" }));
+      const status =
+        typeof err === "object" &&
+        err !== null &&
+        "status" in err &&
+        typeof err.status === "number"
+          ? err.status
+          : 500;
+      const message =
+        typeof err === "object" &&
+        err !== null &&
+        "message" in err &&
+        typeof err.message === "string"
+          ? err.message
+          : "Authentication failed";
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: message }));
     }
   }
 }
