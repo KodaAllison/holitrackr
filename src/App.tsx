@@ -56,10 +56,98 @@ function App() {
   const [countries, setCountries] = useState<Country[]>([])
   const [sessionCheckTimedOut, setSessionCheckTimedOut] = useState(false)
 
+  const fetchVisitedCountries = async (): Promise<VisitedCountry[]> => {
+    try {
+      const resp = await fetch('/api/countries', {
+        method: 'GET',
+        credentials: 'include',
+      })
+      if (!resp.ok) return []
+      const data = (await resp.json()) as unknown
+      if (!Array.isArray(data)) return []
+      const isVisitedCountry = (c: unknown): c is VisitedCountry => {
+        if (typeof c !== 'object' || c === null) return false
+        const obj = c as Record<string, unknown>
+        return typeof obj.code === 'string' && typeof obj.name === 'string'
+      }
+      return data.filter(isVisitedCountry)
+    } catch {
+      return []
+    }
+  }
+
+  const insertVisitedCountry = async (country: VisitedCountry): Promise<void> => {
+    await fetch('/api/countries', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(country),
+    })
+  }
+
+  const deleteVisitedCountry = async (country: VisitedCountry): Promise<void> => {
+    await fetch('/api/countries', {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(country),
+    })
+  }
+
+  const resetVisitedCountriesOnServer = async (): Promise<void> => {
+    await fetch('/api/countries?reset=true', {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+  }
+
+  const refetchFromServer = async () => {
+    const latest = await fetchVisitedCountries()
+    setVisitedCountries(latest)
+  }
+
   // Load visited countries when user session is available
   useEffect(() => {
     if (session?.user?.id) {
-      setVisitedCountries(loadVisitedCountries(session.user.id))
+      let cancelled = false
+      const load = async () => {
+        const fromDb = await fetchVisitedCountries()
+        if (cancelled) return
+
+        // One-time migration: if DB is empty, migrate existing localStorage for this user.
+        if (fromDb.length === 0) {
+          const legacy = loadVisitedCountries(session.user.id)
+          if (legacy.length > 0) {
+            try {
+              for (const c of legacy) {
+                await insertVisitedCountry(c)
+              }
+
+              // Clear local-only data after successful migration.
+              localStorage.removeItem(
+                `${STORAGE_KEY_PREFIX}-${session.user.id}`
+              )
+
+              const refreshed = await fetchVisitedCountries()
+              if (cancelled) return
+              setVisitedCountries(refreshed.length > 0 ? refreshed : legacy)
+              return
+            } catch {
+              // Fall back to legacy data in UI if migration fails.
+              setVisitedCountries(legacy)
+              return
+            }
+          }
+        }
+
+        setVisitedCountries(fromDb)
+      }
+
+      load()
+
+      return () => {
+        cancelled = true
+      }
     }
   }, [session?.user?.id])
 
@@ -68,21 +156,37 @@ function App() {
       const isVisited = prev.some(
         v => v.code === country.code && v.name === country.name
       )
-      return isVisited
+
+      const next = isVisited
         ? prev.filter(v => !(v.code === country.code && v.name === country.name))
-        : [...prev, country]
+        : [...prev, country as VisitedCountry]
+
+      void (async () => {
+        try {
+          if (isVisited) {
+            await deleteVisitedCountry({ code: country.code, name: country.name })
+          } else {
+            await insertVisitedCountry({ code: country.code, name: country.name })
+          }
+        } catch (err) {
+          console.warn('Failed to persist visited country:', err)
+          await refetchFromServer()
+        }
+      })()
+
+      return next
     })
   }
 
-  useEffect(() => {
-    if (!session?.user?.id) return
+  const resetVisitedCountries = async () => {
+    setVisitedCountries([])
     try {
-      const storageKey = `${STORAGE_KEY_PREFIX}-${session.user.id}`
-      localStorage.setItem(storageKey, JSON.stringify(visitedCountries))
+      await resetVisitedCountriesOnServer()
     } catch (err) {
-      console.warn('Failed to persist visited countries:', err)
+      console.warn('Failed to reset visited countries:', err)
+      await refetchFromServer()
     }
-  }, [visitedCountries, session?.user?.id])
+  }
 
   useEffect(() => {
     if (!isPending) {
@@ -163,7 +267,7 @@ function App() {
             <VisitedCountriesList
               visitedCountries={visitedCountries}
               onRemove={toggleCountry}
-              onReset={() => setVisitedCountries([])}
+              onReset={resetVisitedCountries}
             />
           </div>
         </div>

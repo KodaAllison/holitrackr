@@ -2,6 +2,7 @@ import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet'
 import { useEffect, useState, useRef } from 'react'
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry } from 'geojson'
 import type { PathOptions } from 'leaflet'
+import type { TooltipOptions } from 'leaflet'
 import type { GeoJSON as LeafletGeoJSON } from 'leaflet'
 import type { Country, VisitedCountry } from '../types'
 
@@ -35,16 +36,28 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
         
         // Extract country list for search
         if (onCountriesLoaded && data.features) {
-          const countries = data.features
-            .map((feature: any) => ({
-              name: feature.properties?.name || feature.properties?.ADMIN || 'Unknown',
-              code:
-                feature.properties?.['ISO3166-1-Alpha-3'] ||
-                feature.properties?.ISO_A3 ||
-                '',
-            }))
-            .filter((c: any) => c.code && c.name !== 'Unknown')
-            .sort((a: any, b: any) => a.name.localeCompare(b.name))
+          const countries = (data.features as Array<Feature<Geometry, GeoJsonProperties>>)
+            .map((feature) => {
+              const props =
+                feature.properties as
+                  | Record<string, unknown>
+                  | null
+                  | undefined
+
+              const name =
+                (typeof props?.name === 'string' && props.name) ||
+                (typeof props?.ADMIN === 'string' && props.ADMIN) ||
+                'Unknown'
+
+              const code =
+                (typeof props?.['ISO3166-1-Alpha-3'] === 'string' && props?.['ISO3166-1-Alpha-3']) ||
+                (typeof props?.ISO_A3 === 'string' && props?.ISO_A3) ||
+                ''
+
+              return { name, code }
+            })
+            .filter((c) => c.code && c.name !== 'Unknown')
+            .sort((a, b) => a.name.localeCompare(b.name))
           
           onCountriesLoaded(countries)
         }
@@ -81,24 +94,37 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
     }
   }
 
-  const onEachCountry = (feature: Feature<Geometry, GeoJsonProperties>, layer: any) => {
+  const onEachCountry = (
+    feature: Feature<Geometry, GeoJsonProperties>,
+    layer: unknown
+  ) => {
     const countryName =
       feature.properties?.name || feature.properties?.ADMIN || 'Unknown'
 
     const countryCode =
       feature.properties?.['ISO3166-1-Alpha-3'] ||
       feature.properties?.ISO_A3
+
+    const leafletLayer = layer as unknown as {
+      bindTooltip: (content: string, options: TooltipOptions) => void
+      setStyle: (style: PathOptions) => void
+      on: (handlers: {
+        mouseover: () => void
+        mouseout: () => void
+        click: () => void
+      }) => void
+    }
     
     // Bind tooltip that shows automatically on hover
-    layer.bindTooltip(countryName, {
+    leafletLayer.bindTooltip(countryName, {
       permanent: false,
       sticky: true,
       opacity: 1
     })
     
-    layer.on({
+    leafletLayer.on({
       mouseover: () => {
-        layer.setStyle({
+        leafletLayer.setStyle({
           fillOpacity: 0.9,
           weight: 2,
         })
@@ -106,7 +132,7 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
       mouseout: () => {
         const isCurrentlyVisited =
           countryCode && isCountryVisited(countryCode, countryName)
-        layer.setStyle({
+        leafletLayer.setStyle({
           fillColor: isCurrentlyVisited ? '#10b981' : '#e5e7eb',
           fillOpacity: isCurrentlyVisited ? 0.7 : 0.5,
           weight: 1,
@@ -123,13 +149,18 @@ export default function WorldMap({ visitedCountries, onCountryClick, onCountries
   // Re-style all layers when visitedCountries changes
   useEffect(() => {
     if (geoJsonRef.current) {
-      geoJsonRef.current.eachLayer((layer: any) => {
-        if (layer.feature) {
-          layer.setStyle(getCountryStyle(layer.feature))
+      geoJsonRef.current.eachLayer((layer) => {
+        const leafletLayer = layer as unknown as {
+          feature?: Feature<Geometry, GeoJsonProperties>
+          setStyle: (style: PathOptions) => void
+        }
+
+        if (leafletLayer.feature) {
+          leafletLayer.setStyle(getCountryStyle(leafletLayer.feature))
         }
       })
     }
-  }, [visitedCountries])
+  }, [visitedCountries, getCountryStyle])
 
   if (!geoData) {
     return (
