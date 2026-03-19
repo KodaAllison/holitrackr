@@ -23,6 +23,8 @@ const authConfig = {
     ssl: databaseUrl.includes("localhost")
       ? undefined
       : { rejectUnauthorized: false },
+    connectionTimeoutMillis: 5000,
+    query_timeout: 10000,
   }),
   baseURL,
   secret,

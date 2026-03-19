@@ -54,6 +54,7 @@ function App() {
   const { data: session, isPending } = useSession()
   const [visitedCountries, setVisitedCountries] = useState<VisitedCountry[]>([])
   const [countries, setCountries] = useState<Country[]>([])
+  const [sessionCheckTimedOut, setSessionCheckTimedOut] = useState(false)
 
   // Load visited countries when user session is available
   useEffect(() => {
@@ -83,8 +84,22 @@ function App() {
     }
   }, [visitedCountries, session?.user?.id])
 
+  useEffect(() => {
+    if (!isPending) {
+      setSessionCheckTimedOut(false)
+      return
+    }
+    const timeoutId = window.setTimeout(() => {
+      setSessionCheckTimedOut(true)
+    }, 8000)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [isPending])
+
   // Show loading state while checking authentication
-  if (isPending) {
+  if (isPending && !sessionCheckTimedOut) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -101,6 +116,11 @@ function App() {
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <Header />
         <div className="flex-1 flex items-center justify-center px-4 py-8">
+          {sessionCheckTimedOut && (
+            <div className="w-full max-w-md mb-4 p-3 bg-amber-100 border border-amber-300 text-amber-800 rounded">
+              Session check timed out. The auth server may be unavailable.
+            </div>
+          )}
           <AuthForm />
         </div>
         <Footer />
