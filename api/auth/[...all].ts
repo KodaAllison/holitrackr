@@ -12,7 +12,19 @@ const cleanUrl = databaseUrl.replace(/[&?]channel_binding=[^&]*/g, "");
 
 const baseURL =
   process.env.BETTER_AUTH_URL ||
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:5173");
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:5173");
+
+const trustedOrigins = new Set([baseURL]);
+if (process.env.VERCEL_URL)
+  trustedOrigins.add(`https://${process.env.VERCEL_URL}`);
+if (process.env.VERCEL_PROJECT_PRODUCTION_URL)
+  trustedOrigins.add(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`);
+if (process.env.VERCEL_BRANCH_URL)
+  trustedOrigins.add(`https://${process.env.VERCEL_BRANCH_URL}`);
 
 const pool = new Pool({ connectionString: cleanUrl });
 
@@ -30,7 +42,7 @@ const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7,
     updateAge: 60 * 60 * 24,
   },
-  trustedOrigins: [baseURL],
+  trustedOrigins: [...trustedOrigins],
 });
 
 const handler = toNodeHandler(auth);

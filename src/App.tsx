@@ -89,9 +89,10 @@ function App() {
       setSessionCheckTimedOut(false)
       return
     }
+    // Vercel cold start + Neon compute wake-up can take 10-15s on free tier
     const timeoutId = window.setTimeout(() => {
       setSessionCheckTimedOut(true)
-    }, 8000)
+    }, 20000)
 
     return () => {
       window.clearTimeout(timeoutId)
