@@ -10,7 +10,8 @@ import AuthForm from './components/AuthForm'
 import UserMenu from './components/UserMenu'
 import { useSession } from './lib/auth-client'
 
-const STORAGE_KEY_PREFIX = 'holitrackr-visited-countries'
+const STORAGE_KEY_PREFIX = 'myatlas-visited-countries'
+const LEGACY_STORAGE_KEY_PREFIX = 'holitrackr-visited-countries'
 
 function parseCountries(raw: string | null): VisitedCountry[] {
   if (!raw) return []
@@ -37,11 +38,22 @@ function loadVisitedCountries(userId?: string): VisitedCountry[] {
     if (stored) return parseCountries(stored)
 
     // One-time migration from legacy key (pre-auth)
-    const legacy = parseCountries(localStorage.getItem(STORAGE_KEY_PREFIX))
-    if (legacy.length > 0) {
-      localStorage.setItem(userKey, JSON.stringify(legacy))
-      localStorage.removeItem(STORAGE_KEY_PREFIX)
-      return legacy
+    const legacyUserKey = `${LEGACY_STORAGE_KEY_PREFIX}-${userId}`
+    const legacyUser = localStorage.getItem(legacyUserKey)
+    if (legacyUser) {
+      const parsed = parseCountries(legacyUser)
+      if (parsed.length > 0) {
+        localStorage.setItem(userKey, JSON.stringify(parsed))
+        localStorage.removeItem(legacyUserKey)
+        return parsed
+      }
+    }
+
+    const legacyPreAuth = parseCountries(localStorage.getItem(LEGACY_STORAGE_KEY_PREFIX))
+    if (legacyPreAuth.length > 0) {
+      localStorage.setItem(userKey, JSON.stringify(legacyPreAuth))
+      localStorage.removeItem(LEGACY_STORAGE_KEY_PREFIX)
+      return legacyPreAuth
     }
 
     return []

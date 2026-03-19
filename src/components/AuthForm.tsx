@@ -28,7 +28,7 @@ export default function AuthForm() {
     <div className="w-full max-w-md mx-auto p-8 bg-white rounded-lg shadow-lg">
       <div className="text-center mb-8">
         <h2 className="text-3xl font-bold text-gray-900 mb-2">
-          Welcome to HoliTrackr
+          Welcome to MyAtlas
         </h2>
         <p className="text-gray-600">
           Track your travel adventures around the world
