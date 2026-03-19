@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { toNodeHandler } from "better-auth/node";
+import { Pool } from "@neondatabase/serverless";
 import type { IncomingMessage, ServerResponse } from "http";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -7,14 +8,16 @@ if (!databaseUrl) {
   throw new Error("[auth] Missing required environment variable: DATABASE_URL");
 }
 
+const cleanUrl = databaseUrl.replace(/[&?]channel_binding=[^&]*/g, "");
+
 const baseURL =
-  process.env.BETTER_AUTH_URL || `https://${process.env.VERCEL_URL}` || "http://localhost:5173";
+  process.env.BETTER_AUTH_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:5173");
+
+const pool = new Pool({ connectionString: cleanUrl });
 
 const auth = betterAuth({
-  database: {
-    provider: "pg",
-    url: databaseUrl,
-  },
+  database: pool,
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
   socialProviders: {
