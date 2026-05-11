@@ -21,9 +21,13 @@ async function createServer() {
         user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
         country_code TEXT NOT NULL,
         country_name TEXT NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'visited',
         created_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(user_id, country_code, country_name)
       );
+    `);
+    await pool.query(`
+      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'visited'
     `);
   } catch (err) {
     console.error('Database migration failed — aborting startup:', err);
@@ -54,8 +58,8 @@ async function createServer() {
     const userId = session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { rows } = await authConfig.database.query<{ country_code: string; country_name: string }>(
-      `SELECT country_code, country_name
+    const { rows } = await authConfig.database.query<{ country_code: string; country_name: string; status: string }>(
+      `SELECT country_code, country_name, status
        FROM visited_countries
        WHERE user_id = $1
        ORDER BY created_at DESC`,
@@ -66,6 +70,7 @@ async function createServer() {
       rows.map((r) => ({
         code: r.country_code,
         name: r.country_name,
+        status: r.status,
       }))
     );
   });
@@ -78,16 +83,16 @@ async function createServer() {
     const userId = session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { code, name } = (req.body ?? {}) as { code?: unknown; name?: unknown };
+    const { code, name, status = 'visited' } = (req.body ?? {}) as { code?: unknown; name?: unknown; status?: unknown };
     if (typeof code !== 'string' || typeof name !== 'string') {
       return res.status(400).json({ error: 'Invalid payload' });
     }
 
     await authConfig.database.query(
-      `INSERT INTO visited_countries (user_id, country_code, country_name)
-       VALUES ($1, $2, $3)
-       ON CONFLICT DO NOTHING`,
-      [userId, code, name]
+      `INSERT INTO visited_countries (user_id, country_code, country_name, status)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, country_code, country_name) DO UPDATE SET status = EXCLUDED.status`,
+      [userId, code, name, status]
     );
 
     return res.status(204).end();

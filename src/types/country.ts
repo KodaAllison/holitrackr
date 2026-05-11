@@ -12,4 +12,5 @@ export interface Country {
 export interface VisitedCountry {
   code: string
   name: string
+  status: 'visited' | 'bucketlist'
 }

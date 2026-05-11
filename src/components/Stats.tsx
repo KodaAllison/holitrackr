@@ -1,8 +1,9 @@
 interface StatsProps {
   visitedCount: number
+  bucketListCount: number
 }
 
-export default function Stats({ visitedCount }: StatsProps) {
+export default function Stats({ visitedCount, bucketListCount }: StatsProps) {
   const totalCountries = 195 // Total UN recognized countries
   const percentage = ((visitedCount / totalCountries) * 100).toFixed(1)
 
@@ -13,6 +14,10 @@ export default function Stats({ visitedCount }: StatsProps) {
           <div className="text-center">
             <p className="text-3xl font-bold text-blue-600">{visitedCount}</p>
             <p className="text-gray-600 text-sm">Countries Visited</p>
+          </div>
+          <div className="text-center">
+            <p className="text-3xl font-bold text-amber-500">{bucketListCount}</p>
+            <p className="text-gray-600 text-sm">Bucket List</p>
           </div>
           <div className="text-center">
             <p className="text-3xl font-bold text-green-600">{percentage}%</p>
