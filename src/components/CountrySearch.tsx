@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react'
-import type { Country } from '../types'
+import type { Country, VisitedCountry } from '../types'
 
 interface CountrySearchProps {
   countries: Country[]
-  visitedCountries: Array<{ code: string; name: string }>
-  onCountrySelect: (country: Country) => void
+  visitedCountries: VisitedCountry[]
+  onCountrySelect: (country: Country, status: 'visited' | 'bucketlist') => void
 }
 
-export default function CountrySearch({ 
-  countries, 
-  visitedCountries, 
-  onCountrySelect 
+export default function CountrySearch({
+  countries,
+  visitedCountries,
+  onCountrySelect
 }: CountrySearchProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [filteredCountries, setFilteredCountries] = useState<Country[]>([])
@@ -24,7 +24,7 @@ export default function CountrySearch({
     }
 
     const filtered = countries
-      .filter(country => 
+      .filter(country =>
         country.name.toLowerCase().includes(searchTerm.toLowerCase())
       )
       .slice(0, 10) // Limit to 10 results
@@ -33,8 +33,8 @@ export default function CountrySearch({
     setShowDropdown(filtered.length > 0)
   }, [searchTerm, countries])
 
-  const handleSelect = (country: Country) => {
-    onCountrySelect(country)
+  const handleSelect = (country: Country, status: 'visited' | 'bucketlist') => {
+    onCountrySelect(country, status)
     setSearchTerm('')
     setShowDropdown(false)
   }
@@ -67,20 +67,40 @@ export default function CountrySearch({
       {showDropdown && (
         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {filteredCountries.map((country) => {
-            const isVisited = visitedCountries.some(
+            const activeStatus = visitedCountries.find(
               v => v.code === country.code && v.name === country.name
-            )
+            )?.status
             return (
-              <button
+              <div
                 key={country.code}
-                onClick={() => handleSelect(country)}
-                className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center justify-between transition-colors"
+                className="w-full px-4 py-2 hover:bg-gray-100 flex items-center justify-between gap-2 transition-colors"
               >
                 <span className="font-medium">{country.name}</span>
-                {isVisited && (
-                  <span className="text-green-600 text-sm">✓ Visited</span>
-                )}
-              </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(country, 'visited')}
+                    className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                      activeStatus === 'visited'
+                        ? 'bg-emerald-500 text-white'
+                        : 'border border-emerald-500 text-emerald-600 hover:bg-emerald-50'
+                    }`}
+                  >
+                    Visited
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(country, 'bucketlist')}
+                    className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                      activeStatus === 'bucketlist'
+                        ? 'bg-amber-500 text-white'
+                        : 'border border-amber-500 text-amber-600 hover:bg-amber-50'
+                    }`}
+                  >
+                    Bucket List
+                  </button>
+                </div>
+              </div>
             )
           })}
         </div>

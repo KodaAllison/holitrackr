@@ -18,13 +18,22 @@ function parseCountries(raw: string | null): VisitedCountry[] {
   try {
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (c): c is VisitedCountry =>
-        typeof c === 'object' &&
-        c !== null &&
-        typeof (c as VisitedCountry).code === 'string' &&
-        typeof (c as VisitedCountry).name === 'string'
-    )
+    return parsed
+      .filter(
+        (c): c is Record<string, unknown> =>
+          typeof c === 'object' &&
+          c !== null &&
+          typeof (c as Record<string, unknown>).code === 'string' &&
+          typeof (c as Record<string, unknown>).name === 'string'
+      )
+      .map((c): VisitedCountry => ({
+        code: c.code as string,
+        name: c.name as string,
+        status:
+          c.status === 'visited' || c.status === 'bucketlist'
+            ? c.status
+            : 'visited',
+      }))
   } catch {
     return []
   }
@@ -77,12 +86,19 @@ function App() {
       if (!resp.ok) return []
       const data = (await resp.json()) as unknown
       if (!Array.isArray(data)) return []
-      const isVisitedCountry = (c: unknown): c is VisitedCountry => {
+      const isRawCountry = (c: unknown): c is Record<string, unknown> => {
         if (typeof c !== 'object' || c === null) return false
         const obj = c as Record<string, unknown>
         return typeof obj.code === 'string' && typeof obj.name === 'string'
       }
-      return data.filter(isVisitedCountry)
+      return data.filter(isRawCountry).map((c): VisitedCountry => ({
+        code: c.code as string,
+        name: c.name as string,
+        status:
+          c.status === 'visited' || c.status === 'bucketlist'
+            ? c.status
+            : 'visited',
+      }))
     } catch {
       return []
     }
@@ -163,22 +179,64 @@ function App() {
     }
   }, [session?.user?.id])
 
-  const toggleCountry = (country: VisitedCountry | Country) => {
+  const toggleCountry = (country: VisitedCountry | Country, explicitStatus?: 'visited' | 'bucketlist') => {
     setVisitedCountries(prev => {
-      const isVisited = prev.some(
+      const existing = prev.find(
         v => v.code === country.code && v.name === country.name
       )
 
-      const next = isVisited
-        ? prev.filter(v => !(v.code === country.code && v.name === country.name))
-        : [...prev, country as VisitedCountry]
+      let next: VisitedCountry[]
+      let serverAction: 'insert' | 'delete'
+      let newStatus: 'visited' | 'bucketlist' = 'visited'
+
+      if (explicitStatus !== undefined) {
+        // Search-triggered: explicit status provided
+        if (existing && existing.status === explicitStatus) {
+          // Already that exact status — remove
+          next = prev.filter(v => !(v.code === country.code && v.name === country.name))
+          serverAction = 'delete'
+        } else if (existing) {
+          // Exists with different status — update in place
+          newStatus = explicitStatus
+          next = prev.map(v =>
+            v.code === country.code && v.name === country.name
+              ? { ...v, status: explicitStatus }
+              : v
+          )
+          serverAction = 'insert'
+        } else {
+          // Not in list — add
+          newStatus = explicitStatus
+          next = [...prev, { code: country.code, name: country.name, status: explicitStatus }]
+          serverAction = 'insert'
+        }
+      } else {
+        // Map click cycle: not present → visited → bucketlist → remove
+        if (!existing) {
+          newStatus = 'visited'
+          next = [...prev, { code: country.code, name: country.name, status: 'visited' }]
+          serverAction = 'insert'
+        } else if (existing.status === 'visited') {
+          newStatus = 'bucketlist'
+          next = prev.map(v =>
+            v.code === country.code && v.name === country.name
+              ? { ...v, status: 'bucketlist' }
+              : v
+          )
+          serverAction = 'insert'
+        } else {
+          // bucketlist → remove
+          next = prev.filter(v => !(v.code === country.code && v.name === country.name))
+          serverAction = 'delete'
+        }
+      }
 
       void (async () => {
         try {
-          if (isVisited) {
-            await deleteVisitedCountry({ code: country.code, name: country.name })
+          if (serverAction === 'delete') {
+            await deleteVisitedCountry({ code: country.code, name: country.name, status: existing?.status ?? 'visited' })
           } else {
-            await insertVisitedCountry({ code: country.code, name: country.name })
+            await insertVisitedCountry({ code: country.code, name: country.name, status: newStatus })
           }
         } catch (err) {
           console.warn('Failed to persist visited country:', err)
@@ -188,6 +246,11 @@ function App() {
 
       return next
     })
+  }
+
+  const removeCountry = (country: VisitedCountry) => {
+    setVisitedCountries(prev => prev.filter(v => !(v.code === country.code && v.name === country.name)))
+    void deleteVisitedCountry(country)
   }
 
   const resetVisitedCountries = async () => {
@@ -255,7 +318,10 @@ function App() {
         <UserMenu user={{ name: session.user.name, email: session.user.email }} />
       </div>
 
-      <Stats visitedCount={visitedCountries.length} />
+      <Stats
+        visitedCount={visitedCountries.filter(v => v.status === 'visited').length}
+        bucketListCount={visitedCountries.filter(v => v.status === 'bucketlist').length}
+      />
       
       {/* Search Bar */}
       <div className="flex justify-center px-4 py-4">
@@ -271,14 +337,14 @@ function App() {
           <div className="lg:col-span-2">
             <WorldMap 
               visitedCountries={visitedCountries} 
-              onCountryClick={(code, name) => toggleCountry({ code, name })}
+              onCountryAction={(code, name, status) => toggleCountry({ code, name }, status)}
               onCountriesLoaded={setCountries}
             />
           </div>
           <div className="h-[420px] max-h-[420px] mb-4">
             <VisitedCountriesList
               visitedCountries={visitedCountries}
-              onRemove={toggleCountry}
+              onRemove={removeCountry}
               onReset={resetVisitedCountries}
             />
           </div>
