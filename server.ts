@@ -29,6 +29,9 @@ async function createServer() {
     await pool.query(`
       ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'visited'
     `);
+    await pool.query(`
+      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS notes TEXT
+    `);
   } catch (err) {
     console.error('Database migration failed — aborting startup:', err);
     process.exit(1);
@@ -58,8 +61,8 @@ async function createServer() {
     const userId = session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { rows } = await authConfig.database.query<{ country_code: string; country_name: string; status: string }>(
-      `SELECT country_code, country_name, status
+    const { rows } = await authConfig.database.query<{ country_code: string; country_name: string; status: string; notes: string | null; created_at: string }>(
+      `SELECT country_code, country_name, status, notes, created_at
        FROM visited_countries
        WHERE user_id = $1
        ORDER BY created_at DESC`,
@@ -71,6 +74,8 @@ async function createServer() {
         code: r.country_code,
         name: r.country_name,
         status: r.status,
+        notes: r.notes ?? undefined,
+        visitedAt: r.created_at,
       }))
     );
   });
@@ -83,16 +88,40 @@ async function createServer() {
     const userId = session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { code, name, status = 'visited' } = (req.body ?? {}) as { code?: unknown; name?: unknown; status?: unknown };
+    const { code, name, status = 'visited', notes } = (req.body ?? {}) as { code?: unknown; name?: unknown; status?: unknown; notes?: unknown };
     if (typeof code !== 'string' || typeof name !== 'string') {
       return res.status(400).json({ error: 'Invalid payload' });
     }
+    const notesValue = typeof notes === 'string' ? notes : null;
 
     await authConfig.database.query(
-      `INSERT INTO visited_countries (user_id, country_code, country_name, status)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO visited_countries (user_id, country_code, country_name, status, notes)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (user_id, country_code, country_name) DO UPDATE SET status = EXCLUDED.status`,
-      [userId, code, name, status]
+      [userId, code, name, status, notesValue]
+    );
+
+    return res.status(204).end();
+  });
+
+  app.patch('/api/countries', async (req, res) => {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    });
+
+    const userId = session?.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { code, name, notes } = (req.body ?? {}) as { code?: unknown; name?: unknown; notes?: unknown };
+    if (typeof code !== 'string' || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+    const notesValue = typeof notes === 'string' ? notes : null;
+
+    await authConfig.database.query(
+      `UPDATE visited_countries SET notes = $1
+       WHERE user_id = $2 AND country_code = $3 AND country_name = $4`,
+      [notesValue, userId, code, name]
     );
 
     return res.status(204).end();

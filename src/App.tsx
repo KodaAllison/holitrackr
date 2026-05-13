@@ -98,6 +98,8 @@ function App() {
           c.status === 'visited' || c.status === 'bucketlist'
             ? c.status
             : 'visited',
+        notes: typeof c.notes === 'string' ? c.notes : undefined,
+        visitedAt: typeof c.visitedAt === 'string' ? c.visitedAt : undefined,
       }))
     } catch {
       return []
@@ -132,6 +134,25 @@ function App() {
   const refetchFromServer = async () => {
     const latest = await fetchVisitedCountries()
     setVisitedCountries(latest)
+  }
+
+  const updateCountryNotes = async (country: VisitedCountry, notes: string): Promise<void> => {
+    setVisitedCountries(prev =>
+      prev.map(v =>
+        v.code === country.code && v.name === country.name ? { ...v, notes } : v
+      )
+    )
+    try {
+      await fetch('/api/countries', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: country.code, name: country.name, notes }),
+      })
+    } catch (err) {
+      console.warn('Failed to update notes:', err)
+      await refetchFromServer()
+    }
   }
 
   // Load visited countries when user session is available
@@ -346,6 +367,7 @@ function App() {
               visitedCountries={visitedCountries}
               onRemove={removeCountry}
               onReset={resetVisitedCountries}
+              onUpdateNotes={updateCountryNotes}
             />
           </div>
         </div>
