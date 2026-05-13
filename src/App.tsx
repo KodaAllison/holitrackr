@@ -136,10 +136,10 @@ function App() {
     setVisitedCountries(latest)
   }
 
-  const updateCountryNotes = async (country: VisitedCountry, notes: string): Promise<void> => {
+  const updateCountryJournal = async (country: VisitedCountry, notes: string, visitedAt: string): Promise<void> => {
     setVisitedCountries(prev =>
       prev.map(v =>
-        v.code === country.code && v.name === country.name ? { ...v, notes } : v
+        v.code === country.code && v.name === country.name ? { ...v, notes, visitedAt: visitedAt || undefined } : v
       )
     )
     try {
@@ -147,10 +147,10 @@ function App() {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: country.code, name: country.name, notes }),
+        body: JSON.stringify({ code: country.code, name: country.name, notes, visitedAt: visitedAt || null }),
       })
     } catch (err) {
-      console.warn('Failed to update notes:', err)
+      console.warn('Failed to update journal:', err)
       await refetchFromServer()
     }
   }
@@ -367,7 +367,7 @@ function App() {
               visitedCountries={visitedCountries}
               onRemove={removeCountry}
               onReset={resetVisitedCountries}
-              onUpdateNotes={updateCountryNotes}
+              onUpdateJournal={updateCountryJournal}
             />
           </div>
         </div>
