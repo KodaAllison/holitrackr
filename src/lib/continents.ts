@@ -281,6 +281,14 @@ export const countryContinent: Record<string, Continent> = {
   GUF: 'South America', // French Guiana
 }
 
-export function getContinent(code: string): Continent {
-  return countryContinent[code] ?? ('Other' as Continent)
+const countryNameContinent: Record<string, Continent> = {
+  France: 'Europe',
+  Norway: 'Europe',
+  Kosovo: 'Europe',
+  'Northern Cyprus': 'Asia',
+  Somaliland: 'Africa',
+}
+
+export function getContinent(code: string, name?: string): Continent {
+  return countryContinent[code] ?? (name ? countryNameContinent[name] : undefined) ?? ('Other' as Continent)
 }

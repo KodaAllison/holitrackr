@@ -13,4 +13,6 @@ export interface VisitedCountry {
   code: string
   name: string
   status: 'visited' | 'bucketlist'
+  notes?: string
+  visitedAt?: string
 }
