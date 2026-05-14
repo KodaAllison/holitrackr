@@ -64,7 +64,7 @@ async function createServer() {
     const userId = session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { rows } = await authConfig.database.query<{ country_code: string; country_name: string; status: string; notes: string | null; visit_date: Date | null }>(
+    const { rows } = await authConfig.database.query<{ country_code: string; country_name: string; status: string; notes: string | null; visit_date: string | null }>(
       `SELECT country_code, country_name, status, notes, visit_date
        FROM visited_countries
        WHERE user_id = $1
@@ -78,7 +78,7 @@ async function createServer() {
         name: r.country_name,
         status: r.status,
         notes: r.notes ?? undefined,
-        visitedAt: r.visit_date ? r.visit_date.toISOString().slice(0, 7) : undefined,
+        visitedAt: r.visit_date ? r.visit_date.slice(0, 7) : undefined,
       }))
     );
   });
@@ -95,12 +95,17 @@ async function createServer() {
     if (typeof code !== 'string' || typeof name !== 'string') {
       return res.status(400).json({ error: 'Invalid payload' });
     }
+    if (status !== 'visited' && status !== 'bucketlist') {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
     const notesValue = typeof notes === 'string' ? notes : null;
 
     await authConfig.database.query(
       `INSERT INTO visited_countries (user_id, country_code, country_name, status, notes)
        VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (user_id, country_code, country_name) DO UPDATE SET status = EXCLUDED.status`,
+       ON CONFLICT (user_id, country_code, country_name) DO UPDATE
+         SET status = EXCLUDED.status,
+             notes = COALESCE(EXCLUDED.notes, visited_countries.notes)`,
       [userId, code, name, status, notesValue]
     );
 

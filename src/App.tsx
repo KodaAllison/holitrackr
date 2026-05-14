@@ -7,7 +7,6 @@ import Stats from './components/Stats'
 import CountrySearch from './components/CountrySearch'
 import VisitedCountriesList from './components/VisitedCountriesList.tsx'
 import AuthForm from './components/AuthForm'
-import UserMenu from './components/UserMenu'
 import { useSession } from './lib/auth-client'
 
 const STORAGE_KEY_PREFIX = 'myatlas-visited-countries'
@@ -143,12 +142,13 @@ function App() {
       )
     )
     try {
-      await fetch('/api/countries', {
+      const resp = await fetch('/api/countries', {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: country.code, name: country.name, notes, visitedAt: visitedAt || null }),
       })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     } catch (err) {
       console.warn('Failed to update journal:', err)
       await refetchFromServer()
@@ -332,12 +332,7 @@ function App() {
   // Show main app if logged in
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Header />
-      
-      {/* User Menu */}
-      <div className="flex justify-end px-4 py-3">
-        <UserMenu user={{ name: session.user.name, email: session.user.email }} />
-      </div>
+      <Header user={{ name: session.user.name, email: session.user.email }} />
 
       <Stats
         visitedCount={visitedCountries.filter(v => v.status === 'visited').length}
