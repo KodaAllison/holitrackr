@@ -9,9 +9,10 @@ tmux new-session -d -s $SESSION -c $DIR
 
 # Layout: 3 Claude panes (top 70%), dev server (bottom 30%)
 tmux split-window -v -p 30 -t $SESSION        # bottom dev server strip
-tmux split-window -h -p 67 -t $SESSION:0.0    # split top into 3 panes
+tmux split-window -h -p 67 -t $SESSION:0.0    # split top-left into left + right two-thirds
+tmux split-window -h -p 50 -t $SESSION:0.2    # split right two-thirds in half
 
-# Claude panes (top row)
+# Claude panes (top row: 0.0, 0.2, 0.3)
 tmux send-keys -t $SESSION:0.0 "cd $DIR && \"$CLAUDE\"" Enter
 tmux send-keys -t $SESSION:0.2 "cd $DIR && \"$CLAUDE\"" Enter
 tmux send-keys -t $SESSION:0.3 "cd $DIR && \"$CLAUDE\"" Enter

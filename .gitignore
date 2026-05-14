@@ -13,6 +13,7 @@ node_modules/
 # Misc
 .DS_Store
 .claude/
+tsconfig.tsbuildinfo
 .env
 .env.local
 .env.development.local

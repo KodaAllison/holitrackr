@@ -38,10 +38,10 @@ The single entry point for the backend. It:
 user_id       TEXT
 country_code  TEXT
 country_name  TEXT
-visit_date    TEXT
-status        TEXT   ('visited' | 'bucketlist')
+status        TEXT        ('visited' | 'bucketlist')
 notes         TEXT
-visited_at    TEXT
+visit_date    DATE        (stored as YYYY-MM-01; API serialises as visitedAt: YYYY-MM)
+created_at    TIMESTAMPTZ
 ```
 
 ### Frontend (`src/`)
