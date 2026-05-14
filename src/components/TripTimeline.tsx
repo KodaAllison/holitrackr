@@ -20,7 +20,6 @@ function formatMonth(month: number): string {
 interface TimelineEntry {
   country: VisitedCountry
   month: number
-  sortKey: number
 }
 
 export default function TripTimeline({ visitedCountries }: TripTimelineProps) {
@@ -42,7 +41,7 @@ export default function TripTimeline({ visitedCountries }: TripTimelineProps) {
     }
     const { year, month } = parsed
     const existing = yearMap.get(year)
-    const entry: TimelineEntry = { country, month, sortKey: month }
+    const entry: TimelineEntry = { country, month }
     if (existing) {
       existing.push(entry)
     } else {
@@ -53,8 +52,9 @@ export default function TripTimeline({ visitedCountries }: TripTimelineProps) {
   // Sort years descending, entries within each year by month ascending
   const sortedYears = [...yearMap.keys()].sort((a, b) => b - a)
   for (const year of sortedYears) {
+    // safe: year came from yearMap.keys()
     const entries = yearMap.get(year)!
-    entries.sort((a, b) => a.sortKey - b.sortKey)
+    entries.sort((a, b) => a.month - b.month)
     withDate.push({ year, entries })
   }
 
