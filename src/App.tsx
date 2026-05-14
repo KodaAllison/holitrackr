@@ -6,6 +6,7 @@ import Footer from './components/Footer'
 import Stats from './components/Stats'
 import CountrySearch from './components/CountrySearch'
 import VisitedCountriesList from './components/VisitedCountriesList.tsx'
+import TripTimeline from './components/TripTimeline'
 import AuthForm from './components/AuthForm'
 import { useSession } from './lib/auth-client'
 
@@ -75,6 +76,7 @@ function App() {
   const [visitedCountries, setVisitedCountries] = useState<VisitedCountry[]>([])
   const [countries, setCountries] = useState<Country[]>([])
   const [sessionCheckTimedOut, setSessionCheckTimedOut] = useState(false)
+  const [activeView, setActiveView] = useState<'map' | 'timeline'>('map')
 
   const fetchVisitedCountries = async (): Promise<VisitedCountry[]> => {
     try {
@@ -338,35 +340,68 @@ function App() {
         visitedCount={visitedCountries.filter(v => v.status === 'visited').length}
         bucketListCount={visitedCountries.filter(v => v.status === 'bucketlist').length}
       />
-      
-      {/* Search Bar */}
-      <div className="flex justify-center px-4 py-4">
-        <CountrySearch 
-          countries={countries}
-          visitedCountries={visitedCountries}
-          onCountrySelect={toggleCountry}
-        />
+
+      {/* View toggle + search */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 container mx-auto max-w-6xl">
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden bg-white shadow-sm shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveView('map')}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeView === 'map'
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            Map
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('timeline')}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeView === 'timeline'
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            Timeline
+          </button>
+        </div>
+
+        {activeView === 'map' && (
+          <CountrySearch
+            countries={countries}
+            visitedCountries={visitedCountries}
+            onCountrySelect={toggleCountry}
+          />
+        )}
       </div>
 
-      <div className="container mx-auto px-4 max-w-6xl">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          <div className="lg:col-span-2">
-            <WorldMap 
-              visitedCountries={visitedCountries} 
-              onCountryAction={(code, name, status) => toggleCountry({ code, name }, status)}
-              onCountriesLoaded={setCountries}
-            />
-          </div>
-          <div className="h-[420px] max-h-[420px] mb-4">
-            <VisitedCountriesList
-              visitedCountries={visitedCountries}
-              onRemove={removeCountry}
-              onReset={resetVisitedCountries}
-              onUpdateJournal={updateCountryJournal}
-            />
+      {activeView === 'map' ? (
+        <div className="container mx-auto px-4 max-w-6xl">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            <div className="lg:col-span-2">
+              <WorldMap
+                visitedCountries={visitedCountries}
+                onCountryAction={(code, name, status) => toggleCountry({ code, name }, status)}
+                onCountriesLoaded={setCountries}
+              />
+            </div>
+            <div className="h-[420px] max-h-[420px] mb-4">
+              <VisitedCountriesList
+                visitedCountries={visitedCountries}
+                onRemove={removeCountry}
+                onReset={resetVisitedCountries}
+                onUpdateJournal={updateCountryJournal}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="container mx-auto max-w-6xl">
+          <TripTimeline visitedCountries={visitedCountries} />
+        </div>
+      )}
       <Footer />
     </div>
   )

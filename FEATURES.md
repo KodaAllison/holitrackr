@@ -44,7 +44,7 @@ Social layer on top of the personal map.
 ---
 
 ## 4. Trip Timeline
-**Status:** Idea
+**Status:** Done
 
 A chronological, narrative view of travel history.
 
@@ -84,6 +84,32 @@ Let users take their data out of the app.
 - CSV: country code, name, visit date, notes
 - PDF: map screenshot + stats page — useful for visa applications or keepsakes
 - Could also serve as a data portability / GDPR-friendly feature
+
+---
+
+## 8. Multiple Visits per Country
+**Status:** Idea
+
+Support logging multiple visits to the same country, each with its own date and optionally its own notes. Currently the schema stores one row per country per user, so a repeat visitor loses all but one trip date.
+
+- Requires a new `country_visits` table: `(id, user_id, country_code, visit_date, notes)` — linked to the existing `visited_countries` row
+- `visited_countries` keeps its role as the status record (visited / bucket list); `country_visits` holds the individual trip log
+- Timeline (#4) would show each visit as a separate event rather than one entry per country
+- Trip Journal (#2) could attach notes/photos per visit rather than per country
+- UX: "Add another visit" button on the country detail or list row; first mark via map sets status + creates visit #1
+- Open question: does visit count show on the map (e.g. a badge) or only in the list/timeline?
+
+---
+
+## 9. In-List Status Toggle
+**Status:** Idea
+
+Allow users to switch a country between "visited" and "bucket list" directly from the country list sidebar, without having to re-click it on the map or use the search bar.
+
+- Small toggle/button on each list row (e.g. a pill that reads "Visited" or "Bucket List", click to flip)
+- Fires the existing PATCH or re-uses `toggleCountry` with an explicit status — no new API endpoint needed
+- Purely a `VisitedCountriesList.tsx` + `App.tsx` change; no DB or type changes required
+- Removes the current friction: finding a country on the map just to change its status
 
 ---
 
