@@ -143,12 +143,13 @@ function App() {
       )
     )
     try {
-      await fetch('/api/countries', {
+      const resp = await fetch('/api/countries', {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: country.code, name: country.name, notes, visitedAt: visitedAt || null }),
       })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     } catch (err) {
       console.warn('Failed to update journal:', err)
       await refetchFromServer()
