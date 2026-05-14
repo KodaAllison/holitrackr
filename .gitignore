@@ -13,6 +13,8 @@ node_modules/
 # Misc
 .DS_Store
 .claude/
+!.claude/skills/
+!.claude/skills/**
 tsconfig.tsbuildinfo
 .env
 .env.local
