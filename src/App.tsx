@@ -7,6 +7,7 @@ import Stats from './components/Stats'
 import CountrySearch from './components/CountrySearch'
 import VisitedCountriesList from './components/VisitedCountriesList.tsx'
 import TripTimeline from './components/TripTimeline'
+import CountryDetailModal from './components/CountryDetailModal'
 import AuthForm from './components/AuthForm'
 import { useSession } from './lib/auth-client'
 
@@ -77,6 +78,7 @@ function App() {
   const [countries, setCountries] = useState<Country[]>([])
   const [sessionCheckTimedOut, setSessionCheckTimedOut] = useState(false)
   const [activeView, setActiveView] = useState<'map' | 'timeline'>('map')
+  const [journalCountry, setJournalCountry] = useState<VisitedCountry | null>(null)
 
   const fetchVisitedCountries = async (): Promise<VisitedCountry[]> => {
     try {
@@ -101,6 +103,8 @@ function App() {
             : 'visited',
         notes: typeof c.notes === 'string' ? c.notes : undefined,
         visitedAt: typeof c.visitedAt === 'string' ? c.visitedAt : undefined,
+        rating: typeof c.rating === 'number' ? c.rating : undefined,
+        tags: Array.isArray(c.tags) ? (c.tags as unknown[]).filter((t): t is string => typeof t === 'string') : undefined,
       }))
     } catch {
       return []
@@ -137,10 +141,16 @@ function App() {
     setVisitedCountries(latest)
   }
 
-  const updateCountryJournal = async (country: VisitedCountry, notes: string, visitedAt: string): Promise<void> => {
+  const updateCountryJournal = async (
+    country: VisitedCountry,
+    updates: { notes: string; visitedAt: string; rating: number | undefined; tags: string[] }
+  ): Promise<void> => {
+    const { notes, visitedAt, rating, tags } = updates
     setVisitedCountries(prev =>
       prev.map(v =>
-        v.code === country.code && v.name === country.name ? { ...v, notes, visitedAt: visitedAt || undefined } : v
+        v.code === country.code && v.name === country.name
+          ? { ...v, notes, visitedAt: visitedAt || undefined, rating, tags }
+          : v
       )
     )
     try {
@@ -148,13 +158,18 @@ function App() {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: country.code, name: country.name, notes, visitedAt: visitedAt || null }),
+        body: JSON.stringify({ code: country.code, name: country.name, notes, visitedAt: visitedAt || null, rating: rating ?? null, tags }),
       })
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     } catch (err) {
       console.warn('Failed to update journal:', err)
       await refetchFromServer()
     }
+  }
+
+  const openJournal = (code: string, name: string) => {
+    const country = visitedCountries.find(v => v.code === code && v.name === name)
+    if (country) setJournalCountry(country)
   }
 
   // Load visited countries when user session is available
@@ -334,6 +349,13 @@ function App() {
   // Show main app if logged in
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {journalCountry && (
+        <CountryDetailModal
+          country={journalCountry}
+          onSave={(updates) => { void updateCountryJournal(journalCountry, updates); setJournalCountry(null) }}
+          onClose={() => setJournalCountry(null)}
+        />
+      )}
       <Header user={{ name: session.user.name, email: session.user.email }} />
 
       <Stats
@@ -385,6 +407,7 @@ function App() {
                 visitedCountries={visitedCountries}
                 onCountryAction={(code, name, status) => toggleCountry({ code, name }, status)}
                 onCountriesLoaded={setCountries}
+                onOpenJournal={openJournal}
               />
             </div>
             <div className="h-[420px] max-h-[420px] mb-4">
@@ -392,7 +415,7 @@ function App() {
                 visitedCountries={visitedCountries}
                 onRemove={removeCountry}
                 onReset={resetVisitedCountries}
-                onUpdateJournal={updateCountryJournal}
+                onEditJournal={setJournalCountry}
               />
             </div>
           </div>

@@ -35,6 +35,12 @@ async function createServer() {
     await pool.query(`
       ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS visit_date DATE
     `);
+    await pool.query(`
+      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS rating INTEGER
+    `);
+    await pool.query(`
+      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS tags TEXT
+    `);
   } catch (err) {
     console.error('Database migration failed — aborting startup:', err);
     process.exit(1);
@@ -64,8 +70,8 @@ async function createServer() {
     const userId = session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { rows } = await authConfig.database.query<{ country_code: string; country_name: string; status: string; notes: string | null; visit_date: string | null }>(
-      `SELECT country_code, country_name, status, notes, visit_date
+    const { rows } = await authConfig.database.query<{ country_code: string; country_name: string; status: string; notes: string | null; visit_date: string | null; rating: number | null; tags: string | null }>(
+      `SELECT country_code, country_name, status, notes, visit_date, rating, tags
        FROM visited_countries
        WHERE user_id = $1
        ORDER BY visit_date DESC NULLS LAST, created_at DESC`,
@@ -73,13 +79,21 @@ async function createServer() {
     );
 
     return res.json(
-      rows.map((r) => ({
-        code: r.country_code,
-        name: r.country_name,
-        status: r.status,
-        notes: r.notes ?? undefined,
-        visitedAt: r.visit_date ? r.visit_date.slice(0, 7) : undefined,
-      }))
+      rows.map((r) => {
+        let parsedTags: string[] | undefined
+        if (r.tags) {
+          try { parsedTags = JSON.parse(r.tags) as string[] } catch { parsedTags = undefined }
+        }
+        return {
+          code: r.country_code,
+          name: r.country_name,
+          status: r.status,
+          notes: r.notes ?? undefined,
+          visitedAt: r.visit_date ? r.visit_date.slice(0, 7) : undefined,
+          rating: r.rating ?? undefined,
+          tags: parsedTags,
+        }
+      })
     );
   });
 
@@ -120,7 +134,7 @@ async function createServer() {
     const userId = session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { code, name, notes, visitedAt } = (req.body ?? {}) as { code?: unknown; name?: unknown; notes?: unknown; visitedAt?: unknown };
+    const { code, name, notes, visitedAt, rating, tags } = (req.body ?? {}) as { code?: unknown; name?: unknown; notes?: unknown; visitedAt?: unknown; rating?: unknown; tags?: unknown };
     if (typeof code !== 'string' || typeof name !== 'string') {
       return res.status(400).json({ error: 'Invalid payload' });
     }
@@ -129,11 +143,15 @@ async function createServer() {
       typeof visitedAt === 'string' && /^\d{4}-\d{2}$/.test(visitedAt)
         ? `${visitedAt}-01`
         : null;
+    const ratingValue = typeof rating === 'number' && rating >= 1 && rating <= 5 ? Math.round(rating) : null;
+    const tagsValue = Array.isArray(tags)
+      ? JSON.stringify(tags.filter((t): t is string => typeof t === 'string'))
+      : null;
 
     await authConfig.database.query(
-      `UPDATE visited_countries SET notes = $1, visit_date = $2
-       WHERE user_id = $3 AND country_code = $4 AND country_name = $5`,
-      [notesValue, visitDateValue, userId, code, name]
+      `UPDATE visited_countries SET notes = $1, visit_date = $2, rating = $3, tags = $4
+       WHERE user_id = $5 AND country_code = $6 AND country_name = $7`,
+      [notesValue, visitDateValue, ratingValue, tagsValue, userId, code, name]
     );
 
     return res.status(204).end();

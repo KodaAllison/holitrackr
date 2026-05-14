@@ -10,9 +10,10 @@ interface WorldMapProps {
   visitedCountries: VisitedCountry[]
   onCountryAction: (code: string, name: string, status: 'visited' | 'bucketlist') => void
   onCountriesLoaded?: (countries: Country[]) => void
+  onOpenJournal?: (code: string, name: string) => void
 }
 
-export default function WorldMap({ visitedCountries, onCountryAction, onCountriesLoaded }: WorldMapProps) {
+export default function WorldMap({ visitedCountries, onCountryAction, onCountriesLoaded, onOpenJournal }: WorldMapProps) {
   const [geoData, setGeoData] = useState<FeatureCollection | null>(null)
   const [activePopup, setActivePopup] = useState<{ code: string; name: string; latlng: [number, number] } | null>(null)
   const geoJsonRef = useRef<LeafletGeoJSON | null>(null)
@@ -185,34 +186,45 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
             style={getCountryStyle}
             onEachFeature={onEachCountry}
           />
-          {activePopup && (
-            <Popup
-              position={activePopup.latlng}
-              eventHandlers={{ remove: () => setActivePopup(null) }}
-            >
-              <div className="text-sm min-w-[160px]">
-                <p className="font-semibold text-gray-800 mb-2">{activePopup.name}</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => { onCountryAction(activePopup.code, activePopup.name, 'visited'); setActivePopup(null) }}
-                    className={`flex-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
-                      visitedCountries.find(v => v.code === activePopup.code && v.name === activePopup.name)?.status === 'visited'
-                        ? 'bg-emerald-500 text-white border-emerald-500'
-                        : 'border-emerald-500 text-emerald-600 hover:bg-emerald-50'
-                    }`}
-                  >Visited</button>
-                  <button
-                    onClick={() => { onCountryAction(activePopup.code, activePopup.name, 'bucketlist'); setActivePopup(null) }}
-                    className={`flex-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
-                      visitedCountries.find(v => v.code === activePopup.code && v.name === activePopup.name)?.status === 'bucketlist'
-                        ? 'bg-amber-500 text-white border-amber-500'
-                        : 'border-amber-500 text-amber-600 hover:bg-amber-50'
-                    }`}
-                  >Bucket List</button>
+          {activePopup && (() => {
+            const entry = visitedCountries.find(v => v.code === activePopup.code && v.name === activePopup.name)
+            return (
+              <Popup
+                position={activePopup.latlng}
+                eventHandlers={{ remove: () => setActivePopup(null) }}
+              >
+                <div className="text-sm min-w-[160px]">
+                  <p className="font-semibold text-gray-800 mb-2">{activePopup.name}</p>
+                  <div className="flex gap-2 mb-2">
+                    <button
+                      onClick={() => { onCountryAction(activePopup.code, activePopup.name, 'visited'); setActivePopup(null) }}
+                      className={`flex-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
+                        entry?.status === 'visited'
+                          ? 'bg-emerald-500 text-white border-emerald-500'
+                          : 'border-emerald-500 text-emerald-600 hover:bg-emerald-50'
+                      }`}
+                    >Visited</button>
+                    <button
+                      onClick={() => { onCountryAction(activePopup.code, activePopup.name, 'bucketlist'); setActivePopup(null) }}
+                      className={`flex-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
+                        entry?.status === 'bucketlist'
+                          ? 'bg-amber-500 text-white border-amber-500'
+                          : 'border-amber-500 text-amber-600 hover:bg-amber-50'
+                      }`}
+                    >Bucket List</button>
+                  </div>
+                  {entry && onOpenJournal && (
+                    <button
+                      onClick={() => { onOpenJournal(activePopup.code, activePopup.name); setActivePopup(null) }}
+                      className="w-full px-2 py-1 rounded text-xs font-medium border border-blue-400 text-blue-600 hover:bg-blue-50 transition-colors"
+                    >
+                      Edit Journal
+                    </button>
+                  )}
                 </div>
-              </div>
-            </Popup>
-          )}
+              </Popup>
+            )
+          })()}
         </MapContainer>
         <div className="absolute bottom-4 left-4 z-[1000] bg-white rounded-lg shadow-md border border-gray-200 px-3 py-2 text-xs space-y-1">
           <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" /> Visited</div>
