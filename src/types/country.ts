@@ -15,4 +15,6 @@ export interface VisitedCountry {
   status: 'visited' | 'bucketlist'
   notes?: string
   visitedAt?: string
+  rating?: number
+  tags?: string[]
 }
