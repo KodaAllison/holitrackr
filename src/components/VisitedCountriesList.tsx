@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { VisitedCountry } from '../types'
 import { getContinent } from '../lib/continents'
+import { countryKey, withStatus } from '../lib/visitedCountries'
 
 interface VisitedCountriesListProps {
   visitedCountries: VisitedCountry[]
@@ -117,8 +118,8 @@ export default function VisitedCountriesList({
     }
   }
 
-  const visited = visitedCountries.filter(v => v.status === 'visited')
-  const bucketList = visitedCountries.filter(v => v.status === 'bucketlist')
+  const visited = withStatus(visitedCountries, 'visited')
+  const bucketList = withStatus(visitedCountries, 'bucketlist')
 
   function groupByContinent(countries: VisitedCountry[]): Map<string, VisitedCountry[]> {
     const map = new Map<string, VisitedCountry[]>()
@@ -148,7 +149,7 @@ export default function VisitedCountriesList({
         </div>
         <ul className="list-none space-y-0">
           {items.map(country => {
-            const key = `${country.code}-${country.name}`
+            const key = countryKey(country)
             return (
               <CountryItem
                 key={key}
