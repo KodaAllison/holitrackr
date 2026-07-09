@@ -10,6 +10,7 @@ import TripTimeline from './components/TripTimeline'
 import CountryDetailModal from './components/CountryDetailModal'
 import AuthForm from './components/AuthForm'
 import { useSession } from './lib/auth-client'
+import { sameCountry, findCountry, withStatus } from './lib/visitedCountries'
 
 const STORAGE_KEY_PREFIX = 'myatlas-visited-countries'
 const LEGACY_STORAGE_KEY_PREFIX = 'holitrackr-visited-countries'
@@ -148,7 +149,7 @@ function App() {
     const { notes, visitedAt, rating, tags } = updates
     setVisitedCountries(prev =>
       prev.map(v =>
-        v.code === country.code && v.name === country.name
+        sameCountry(v, country)
           ? { ...v, notes, visitedAt: visitedAt || undefined, rating, tags }
           : v
       )
@@ -168,7 +169,7 @@ function App() {
   }
 
   const openJournal = (code: string, name: string) => {
-    const country = visitedCountries.find(v => v.code === code && v.name === name)
+    const country = findCountry(visitedCountries, { code, name })
     if (country) setJournalCountry(country)
   }
 
@@ -219,9 +220,7 @@ function App() {
 
   const toggleCountry = (country: VisitedCountry | Country, explicitStatus?: 'visited' | 'bucketlist') => {
     setVisitedCountries(prev => {
-      const existing = prev.find(
-        v => v.code === country.code && v.name === country.name
-      )
+      const existing = findCountry(prev, country)
 
       let next: VisitedCountry[]
       let serverAction: 'insert' | 'delete'
@@ -231,13 +230,13 @@ function App() {
         // Search-triggered: explicit status provided
         if (existing && existing.status === explicitStatus) {
           // Already that exact status — remove
-          next = prev.filter(v => !(v.code === country.code && v.name === country.name))
+          next = prev.filter(v => !sameCountry(v, country))
           serverAction = 'delete'
         } else if (existing) {
           // Exists with different status — update in place
           newStatus = explicitStatus
           next = prev.map(v =>
-            v.code === country.code && v.name === country.name
+            sameCountry(v, country)
               ? { ...v, status: explicitStatus }
               : v
           )
@@ -257,14 +256,14 @@ function App() {
         } else if (existing.status === 'visited') {
           newStatus = 'bucketlist'
           next = prev.map(v =>
-            v.code === country.code && v.name === country.name
+            sameCountry(v, country)
               ? { ...v, status: 'bucketlist' }
               : v
           )
           serverAction = 'insert'
         } else {
           // bucketlist → remove
-          next = prev.filter(v => !(v.code === country.code && v.name === country.name))
+          next = prev.filter(v => !sameCountry(v, country))
           serverAction = 'delete'
         }
       }
@@ -287,7 +286,7 @@ function App() {
   }
 
   const removeCountry = (country: VisitedCountry) => {
-    setVisitedCountries(prev => prev.filter(v => !(v.code === country.code && v.name === country.name)))
+    setVisitedCountries(prev => prev.filter(v => !sameCountry(v, country)))
     void deleteVisitedCountry(country)
   }
 
@@ -359,8 +358,8 @@ function App() {
       <Header user={{ name: session.user.name, email: session.user.email }} />
 
       <Stats
-        visitedCount={visitedCountries.filter(v => v.status === 'visited').length}
-        bucketListCount={visitedCountries.filter(v => v.status === 'bucketlist').length}
+        visitedCount={withStatus(visitedCountries, 'visited').length}
+        bucketListCount={withStatus(visitedCountries, 'bucketlist').length}
       />
 
       {/* View toggle + search */}

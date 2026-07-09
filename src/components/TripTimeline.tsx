@@ -1,4 +1,5 @@
 import type { VisitedCountry } from '../types'
+import { countryKey, withStatus } from '../lib/visitedCountries'
 
 interface TripTimelineProps {
   visitedCountries: VisitedCountry[]
@@ -23,7 +24,7 @@ interface TimelineEntry {
 }
 
 export default function TripTimeline({ visitedCountries }: TripTimelineProps) {
-  const visited = visitedCountries.filter(v => v.status === 'visited')
+  const visited = withStatus(visitedCountries, 'visited')
 
   const withDate: { year: number; entries: TimelineEntry[] }[] = []
   const noDate: VisitedCountry[] = []
@@ -101,7 +102,7 @@ export default function TripTimeline({ visitedCountries }: TripTimelineProps) {
 
             <div className="space-y-4 pl-6">
               {entries.map(({ country, month }) => (
-                <div key={`${country.code}-${country.name}`} className="relative">
+                <div key={countryKey(country)} className="relative">
                   {/* dot on the line */}
                   <span className="absolute -left-[27px] top-[6px] w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
 
@@ -136,7 +137,7 @@ export default function TripTimeline({ visitedCountries }: TripTimelineProps) {
             <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-100" />
             <div className="space-y-3 pl-6">
               {noDate.map(country => (
-                <div key={`${country.code}-${country.name}`} className="relative">
+                <div key={countryKey(country)} className="relative">
                   <span className="absolute -left-[27px] top-[6px] w-2.5 h-2.5 rounded-full bg-gray-300 ring-2 ring-white" />
                   <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3">
                     <p className="font-medium text-gray-600">{country.name}</p>

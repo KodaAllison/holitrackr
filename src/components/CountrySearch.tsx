@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { Country, VisitedCountry } from '../types'
+import { statusOf } from '../lib/visitedCountries'
 
 interface CountrySearchProps {
   countries: Country[]
@@ -67,9 +68,7 @@ export default function CountrySearch({
       {showDropdown && (
         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {filteredCountries.map((country) => {
-            const activeStatus = visitedCountries.find(
-              v => v.code === country.code && v.name === country.name
-            )?.status
+            const activeStatus = statusOf(visitedCountries, country)
             return (
               <div
                 key={country.code}

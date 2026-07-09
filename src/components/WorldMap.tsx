@@ -5,6 +5,7 @@ import type { PathOptions } from 'leaflet'
 import type { TooltipOptions } from 'leaflet'
 import type { GeoJSON as LeafletGeoJSON } from 'leaflet'
 import type { Country, VisitedCountry } from '../types'
+import { findCountry } from '../lib/visitedCountries'
 
 interface WorldMapProps {
   visitedCountries: VisitedCountry[]
@@ -77,7 +78,7 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
       feature?.properties?.name || feature?.properties?.ADMIN || ''
 
     const entry = (countryCode && countryName)
-      ? visitedCountries.find(v => v.code === countryCode && v.name === countryName)
+      ? findCountry(visitedCountries, { code: countryCode, name: countryName })
       : undefined
 
     return {
@@ -125,7 +126,7 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
       },
       mouseout: () => {
         const currentEntry = (countryCode && countryName)
-          ? visitedCountriesRef.current.find(v => v.code === countryCode && v.name === countryName)
+          ? findCountry(visitedCountriesRef.current, { code: countryCode, name: countryName })
           : undefined
         leafletLayer.setStyle({
           fillColor: currentEntry?.status === 'visited' ? '#10b981' : currentEntry?.status === 'bucketlist' ? '#f59e0b' : '#e5e7eb',
@@ -187,7 +188,7 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
             onEachFeature={onEachCountry}
           />
           {activePopup && (() => {
-            const entry = visitedCountries.find(v => v.code === activePopup.code && v.name === activePopup.name)
+            const entry = findCountry(visitedCountries, activePopup)
             return (
               <Popup
                 position={activePopup.latlng}
