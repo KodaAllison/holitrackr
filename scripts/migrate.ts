@@ -1,6 +1,19 @@
 import 'dotenv/config'
-import { authConfig } from '../src/lib/auth'
-import { runDatabaseMigrations } from '../src/server/databaseMigrations'
+
+const configuredDatabaseUrl = process.env.DATABASE_URL
+if (!configuredDatabaseUrl) throw new Error('Missing DATABASE_URL')
+
+const migrationDatabaseUrl = new URL(configuredDatabaseUrl)
+if (migrationDatabaseUrl.hostname.includes('-pooler')) {
+  migrationDatabaseUrl.hostname = migrationDatabaseUrl.hostname.replace('-pooler', '')
+  process.env.DATABASE_URL = migrationDatabaseUrl.toString()
+  console.log('Using a direct Neon connection for database migrations')
+}
+
+const [{ authConfig }, { runDatabaseMigrations }] = await Promise.all([
+  import('../src/lib/auth'),
+  import('../src/server/databaseMigrations'),
+])
 
 try {
   await runDatabaseMigrations()
