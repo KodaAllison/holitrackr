@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { toNodeHandler } from "better-auth/node";
 import type { IncomingMessage, ServerResponse } from "http";
-import { createNeonPool } from "../../src/server/neonPool";
+import { createNeonPool } from "../../src/server/neonPool.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
