@@ -2,8 +2,8 @@ import type {
   CountryIdentity,
   CreateCountryParseResult,
   UpdateCountryInput,
-} from '../types/countriesApi'
-import type { VisitedCountry } from '../types/country'
+} from '../types/countriesApi.ts'
+import type { VisitedCountry } from '../types/country.ts'
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

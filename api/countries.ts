@@ -7,9 +7,9 @@ import {
   parseStoredStatus,
   parseStoredTags,
   parseUpdateCountryInput,
-} from '../src/server/countryPayloads';
-import { createNeonPool } from '../src/server/neonPool';
-import type { StoredCountryRow } from '../src/types/countriesApi';
+} from '../src/server/countryPayloads.ts';
+import { createNeonPool } from '../src/server/neonPool.ts';
+import type { StoredCountryRow } from '../src/types/countriesApi.ts';
 
 type RequestBodyResult =
   | { success: true; value: unknown }
