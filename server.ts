@@ -1,15 +1,16 @@
 import 'dotenv/config';
 import express from 'express';
 import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
-import { getMigrations } from 'better-auth/db';
 import { createServer as createViteServer } from 'vite';
 import { auth, authConfig } from './src/lib/auth';
 import {
   parseCountryIdentity,
   parseCreateCountryInput,
+  parseStoredStatus,
   parseStoredTags,
   parseUpdateCountryInput,
 } from './src/server/countryPayloads';
+import { runDatabaseMigrations } from './src/server/databaseMigrations';
 import { handlePublicStatsRequest } from './src/server/publicStats';
 import type { StoredCountryRow } from './src/types/countriesApi';
 import type { PublicCountryRow } from './src/types/publicStats';
@@ -22,38 +23,8 @@ async function createServer() {
   const app = express();
 
   try {
-    const { runMigrations } = await getMigrations(authConfig);
-    await runMigrations();
+    await runDatabaseMigrations();
     console.log('Database migrations complete');
-
-    // Ensure our app table exists in dev as well.
-    const pool = authConfig.database;
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS visited_countries (
-        id SERIAL PRIMARY KEY,
-        user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
-        country_code TEXT NOT NULL,
-        country_name TEXT NOT NULL,
-        status VARCHAR(20) NOT NULL DEFAULT 'visited',
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE(user_id, country_code, country_name)
-      );
-    `);
-    await pool.query(`
-      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'visited'
-    `);
-    await pool.query(`
-      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS notes TEXT
-    `);
-    await pool.query(`
-      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS visit_date DATE
-    `);
-    await pool.query(`
-      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS rating INTEGER
-    `);
-    await pool.query(`
-      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS tags TEXT
-    `);
   } catch (err) {
     console.error('Database migration failed — aborting startup:', err);
     process.exit(1);
@@ -118,7 +89,7 @@ async function createServer() {
         return {
           code: r.country_code,
           name: r.country_name,
-          status: r.status,
+          status: parseStoredStatus(r.status),
           notes: r.notes ?? undefined,
           visitedAt: r.visit_date ? r.visit_date.slice(0, 7) : undefined,
           rating: r.rating ?? undefined,

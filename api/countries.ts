@@ -1,13 +1,14 @@
 import { betterAuth } from 'better-auth';
 import { fromNodeHeaders } from 'better-auth/node';
-import { Pool } from '@neondatabase/serverless';
 import type { IncomingMessage, ServerResponse } from 'http';
 import {
   parseCountryIdentity,
   parseCreateCountryInput,
+  parseStoredStatus,
   parseStoredTags,
   parseUpdateCountryInput,
 } from '../src/server/countryPayloads';
+import { createNeonPool } from '../src/server/neonPool';
 import type { StoredCountryRow } from '../src/types/countriesApi';
 
 type RequestBodyResult =
@@ -58,7 +59,7 @@ if (process.env.VERCEL_PROJECT_PRODUCTION_URL)
   trustedOrigins.add(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`);
 if (process.env.VERCEL_BRANCH_URL) trustedOrigins.add(`https://${process.env.VERCEL_BRANCH_URL}`);
 
-const pool = new Pool({ connectionString: cleanUrl });
+const pool = createNeonPool(cleanUrl);
 
 const auth = betterAuth({
   database: pool,
@@ -121,7 +122,7 @@ export default async function handler(
           rows.map((r) => ({
             code: r.country_code,
             name: r.country_name,
-            status: r.status,
+            status: parseStoredStatus(r.status),
             notes: r.notes ?? undefined,
             visitedAt: r.visit_date ? r.visit_date.slice(0, 7) : undefined,
             rating: r.rating ?? undefined,

@@ -112,6 +112,7 @@ On startup, the Express server runs the Better Auth migrations and ensures the `
 |---|---|
 | `npm run dev` | Start Express and the Vite development client together |
 | `npm run dev:client` | Start only Vite; API and authentication routes will not be available locally |
+| `npm run db:migrate` | Apply Better Auth and `visited_countries` migrations to `DATABASE_URL` |
 | `npm test` | Run the Vitest suite once |
 | `npm run test:watch` | Run Vitest in watch mode |
 | `npm run lint` | Run ESLint |
@@ -329,7 +330,7 @@ The public-stats tests cover:
 1. Import the repository into Vercel.
 2. Add every required environment variable from `.env.example`.
 3. Set `BETTER_AUTH_URL` and `VITE_BETTER_AUTH_URL` to the deployed application URL.
-4. Ensure the configured PostgreSQL database has been migrated. Running `npm run dev` against that database applies the current local migrations.
+4. From a trusted environment configured with the deployment database variables, run `npm run db:migrate`.
 5. Deploy using the repository's `vercel.json` build configuration.
 6. Sign in once, source the Better Auth owner id, and set `PUBLIC_STATS_OWNER_USER_ID` if the public endpoint is required.
 7. Redeploy after adding or changing environment variables.

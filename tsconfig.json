@@ -22,5 +22,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src", "api", "server.ts", "vite.config.ts"]
+  "include": ["src", "api", "scripts", "server.ts", "vite.config.ts"]
 }

@@ -1,5 +1,5 @@
-import { Pool } from '@neondatabase/serverless'
 import type { IncomingMessage, ServerResponse } from 'http'
+import { createNeonPool } from '../../src/server/neonPool'
 import {
   handlePublicStatsRequest,
 } from '../../src/server/publicStats'
@@ -8,17 +8,15 @@ import type {
   PublicStatsDatabase,
 } from '../../src/types/publicStats'
 
-let pool: Pool | undefined
+let pool: ReturnType<typeof createNeonPool> | undefined
 
-function getPool(): Pool {
+function getPool(): ReturnType<typeof createNeonPool> {
   if (pool) return pool
 
   const databaseUrl = process.env.DATABASE_URL
   if (!databaseUrl) throw new Error('Missing DATABASE_URL')
 
-  pool = new Pool({
-    connectionString: databaseUrl.replace(/[&?]channel_binding=[^&]*/g, ''),
-  })
+  pool = createNeonPool(databaseUrl.replace(/[&?]channel_binding=[^&]*/g, ''))
   return pool
 }
 

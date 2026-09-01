@@ -114,6 +114,7 @@ Allow users to switch a country between "visited" and "bucket list" directly fro
 ---
 
 ## 10. Public Country Stats API
+
 **Status:** Done
 
 A read-only portfolio endpoint at `GET /api/public/stats` exposes a privacy-limited snapshot for one server-configured owner.

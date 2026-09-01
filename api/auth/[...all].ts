@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { toNodeHandler } from "better-auth/node";
-import { Pool } from "@neondatabase/serverless";
 import type { IncomingMessage, ServerResponse } from "http";
+import { createNeonPool } from "../../src/server/neonPool";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -26,7 +26,7 @@ if (process.env.VERCEL_PROJECT_PRODUCTION_URL)
 if (process.env.VERCEL_BRANCH_URL)
   trustedOrigins.add(`https://${process.env.VERCEL_BRANCH_URL}`);
 
-const pool = new Pool({ connectionString: cleanUrl });
+const pool = createNeonPool(cleanUrl);
 
 const auth = betterAuth({
   database: pool,

@@ -3,6 +3,7 @@ import type {
   CreateCountryParseResult,
   UpdateCountryInput,
 } from '../types/countriesApi'
+import type { VisitedCountry } from '../types/country'
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -44,7 +45,7 @@ export function parseUpdateCountryInput(value: unknown): UpdateCountryInput | un
   return {
     ...identity,
     notes: typeof body.notes === 'string' ? body.notes : null,
-    visitDate: typeof body.visitedAt === 'string' && /^\d{4}-\d{2}$/.test(body.visitedAt)
+    visitDate: typeof body.visitedAt === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(body.visitedAt)
       ? `${body.visitedAt}-01`
       : null,
     rating: typeof body.rating === 'number' && body.rating >= 1 && body.rating <= 5
@@ -54,6 +55,10 @@ export function parseUpdateCountryInput(value: unknown): UpdateCountryInput | un
       ? JSON.stringify(body.tags.filter((tag): tag is string => typeof tag === 'string'))
       : null,
   }
+}
+
+export function parseStoredStatus(value: unknown): VisitedCountry['status'] {
+  return value === 'bucketlist' ? 'bucketlist' : 'visited'
 }
 
 export function parseStoredTags(value: string | null): string[] | undefined {
