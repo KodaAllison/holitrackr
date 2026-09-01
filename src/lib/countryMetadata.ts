@@ -258,7 +258,7 @@ export const canonicalCountryMetadata: Readonly<Record<string, CanonicalCountryM
   ZWE: { alpha2: "ZW", name: "Zimbabwe" },
 }
 
-export const specialMapCountryCodes: Readonly<Record<string, string>> = {
+export const legacyMinus99Alpha3ByCountryName: Readonly<Record<string, string>> = {
   France: 'FRA',
   Kosovo: 'XKX',
   Norway: 'NOR',

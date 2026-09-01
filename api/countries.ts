@@ -2,6 +2,13 @@ import { betterAuth } from 'better-auth';
 import { fromNodeHeaders } from 'better-auth/node';
 import { Pool } from '@neondatabase/serverless';
 import type { IncomingMessage, ServerResponse } from 'http';
+import {
+  parseCountryIdentity,
+  parseCreateCountryInput,
+  parseStoredTags,
+  parseUpdateCountryInput,
+} from '../src/server/countryPayloads';
+import type { StoredCountryRow } from '../src/types/countriesApi';
 
 async function readRequestBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -79,15 +86,7 @@ export default async function handler(
     }
 
     if (method === 'GET') {
-      const { rows } = await pool.query<{
-        country_code: string
-        country_name: string
-        status: string
-        notes: string | null
-        visit_date: string | null
-        rating: number | null
-        tags: string | null
-      }>(
+      const { rows } = await pool.query<StoredCountryRow>(
         `SELECT country_code, country_name, status, notes, visit_date, rating, tags
          FROM visited_countries
          WHERE user_id = $1
@@ -106,17 +105,7 @@ export default async function handler(
             notes: r.notes ?? undefined,
             visitedAt: r.visit_date ? r.visit_date.slice(0, 7) : undefined,
             rating: r.rating ?? undefined,
-            tags: (() => {
-              if (!r.tags) return undefined;
-              try {
-                const value: unknown = JSON.parse(r.tags);
-                return Array.isArray(value)
-                  ? value.filter((tag): tag is string => typeof tag === 'string')
-                  : undefined;
-              } catch {
-                return undefined;
-              }
-            })(),
+            tags: parseStoredTags(r.tags),
           }))
         )
       );
@@ -124,26 +113,14 @@ export default async function handler(
     }
 
     if (method === 'POST') {
-      const body = (await readRequestBody(req)) as
-        | { code?: unknown; name?: unknown; status?: unknown; notes?: unknown }
-        | null;
-
-      const code = body?.code;
-      const name = body?.name;
-      const status = body?.status ?? 'visited';
-      if (typeof code !== 'string' || typeof name !== 'string') {
+      const parsed = parseCreateCountryInput(await readRequestBody(req));
+      if (!parsed.success) {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: 'Invalid payload' }));
+        res.end(JSON.stringify({ error: parsed.error }));
         return;
       }
-      if (status !== 'visited' && status !== 'bucketlist') {
-        res.statusCode = 400;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: 'Invalid status' }));
-        return;
-      }
-      const notes = typeof body?.notes === 'string' ? body.notes : null;
+      const { code, name, status, notes } = parsed.value;
 
       await pool.query(
         `INSERT INTO visited_countries (user_id, country_code, country_name, status, notes)
@@ -160,41 +137,18 @@ export default async function handler(
     }
 
     if (method === 'PATCH') {
-      const body = (await readRequestBody(req)) as
-        | {
-            code?: unknown
-            name?: unknown
-            notes?: unknown
-            visitedAt?: unknown
-            rating?: unknown
-            tags?: unknown
-          }
-        | null;
-
-      const code = body?.code;
-      const name = body?.name;
-      if (typeof code !== 'string' || typeof name !== 'string') {
+      const input = parseUpdateCountryInput(await readRequestBody(req));
+      if (!input) {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ error: 'Invalid payload' }));
         return;
       }
 
-      const notes = typeof body?.notes === 'string' ? body.notes : null;
-      const visitDate = typeof body?.visitedAt === 'string' && /^\d{4}-\d{2}$/.test(body.visitedAt)
-        ? `${body.visitedAt}-01`
-        : null;
-      const rating = typeof body?.rating === 'number' && body.rating >= 1 && body.rating <= 5
-        ? Math.round(body.rating)
-        : null;
-      const tags = Array.isArray(body?.tags)
-        ? JSON.stringify(body.tags.filter((tag): tag is string => typeof tag === 'string'))
-        : null;
-
       await pool.query(
         `UPDATE visited_countries SET notes = $1, visit_date = $2, rating = $3, tags = $4
          WHERE user_id = $5 AND country_code = $6 AND country_name = $7`,
-        [notes, visitDate, rating, tags, userId, code, name]
+        [input.notes, input.visitDate, input.rating, input.tags, userId, input.code, input.name]
       );
 
       res.statusCode = 204;
@@ -213,13 +167,8 @@ export default async function handler(
         return;
       }
 
-      const body = (await readRequestBody(req)) as
-        | { code?: unknown; name?: unknown }
-        | null;
-
-      const code = body?.code;
-      const name = body?.name;
-      if (typeof code !== 'string' || typeof name !== 'string') {
+      const identity = parseCountryIdentity(await readRequestBody(req));
+      if (!identity) {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ error: 'Invalid payload' }));
@@ -229,7 +178,7 @@ export default async function handler(
       await pool.query(
         `DELETE FROM visited_countries
          WHERE user_id = $1 AND country_code = $2 AND country_name = $3`,
-        [userId, code, name]
+        [userId, identity.code, identity.name]
       );
 
       res.statusCode = 204;

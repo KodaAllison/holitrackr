@@ -1,32 +1,15 @@
-import { canonicalCountryMetadata, isKnownContinent, specialMapCountryCodes } from '../lib/countryMetadata'
+import {
+  canonicalCountryMetadata,
+  isKnownContinent,
+  legacyMinus99Alpha3ByCountryName,
+} from '../lib/countryMetadata'
 import { getContinent } from '../lib/continents'
-import type { PublicCountry, PublicStatsError, PublicStatsResponse } from '../types/publicStats'
-
-export interface PublicCountryRow {
-  country_code: unknown
-  country_name: unknown
-}
-
-export interface PublicStatsDatabase {
-  query: (
-    statement: string,
-    parameters: unknown[],
-  ) => Promise<{ rows: PublicCountryRow[] }>
-}
-
-export interface PublicStatsRequest {
-  method: string
-  origin: string | undefined
-  ownerUserId: string | undefined
-  database: PublicStatsDatabase
-  now?: () => Date
-}
-
-export interface PublicStatsHttpResponse {
-  status: number
-  headers: Record<string, string>
-  body?: PublicStatsResponse | PublicStatsError
-}
+import type {
+  PublicCountry,
+  PublicCountryRow,
+  PublicStatsHttpResponse,
+  PublicStatsRequest,
+} from '../types/publicStats'
 
 const PUBLIC_STATS_QUERY = `SELECT country_code, country_name
 FROM visited_countries
@@ -53,7 +36,7 @@ function normalizeCountry(row: PublicCountryRow): PublicCountry | undefined {
 
   const storedCode = row.country_code.trim().toUpperCase()
   const alpha3 = storedCode === '-99'
-    ? specialMapCountryCodes[row.country_name]
+    ? legacyMinus99Alpha3ByCountryName[row.country_name]
     : storedCode
   if (!alpha3) return undefined
 

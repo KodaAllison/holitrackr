@@ -2,9 +2,11 @@ import { Pool } from '@neondatabase/serverless'
 import type { IncomingMessage, ServerResponse } from 'http'
 import {
   handlePublicStatsRequest,
-  type PublicCountryRow,
-  type PublicStatsDatabase,
 } from '../../src/server/publicStats'
+import type {
+  PublicCountryRow,
+  PublicStatsDatabase,
+} from '../../src/types/publicStats'
 
 let pool: Pool | undefined
 

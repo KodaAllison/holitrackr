@@ -18,3 +18,29 @@ export interface PublicStatsResponse {
 export interface PublicStatsError {
   error: string
 }
+
+export interface PublicCountryRow {
+  country_code: unknown
+  country_name: unknown
+}
+
+export interface PublicStatsDatabase {
+  query: (
+    statement: string,
+    parameters: unknown[],
+  ) => Promise<{ rows: PublicCountryRow[] }>
+}
+
+export interface PublicStatsRequest {
+  method: string
+  origin: string | undefined
+  ownerUserId: string | undefined
+  database: PublicStatsDatabase
+  now?: () => Date
+}
+
+export interface PublicStatsHttpResponse {
+  status: number
+  headers: Record<string, string>
+  body?: PublicStatsResponse | PublicStatsError
+}
