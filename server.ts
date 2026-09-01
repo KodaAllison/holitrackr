@@ -14,6 +14,10 @@ import { handlePublicStatsRequest } from './src/server/publicStats';
 import type { StoredCountryRow } from './src/types/countriesApi';
 import type { PublicCountryRow } from './src/types/publicStats';
 
+function isMalformedJsonError(error: unknown): error is SyntaxError & { status: 400 } {
+  return error instanceof SyntaxError && 'status' in error && error.status === 400;
+}
+
 async function createServer() {
   const app = express();
 
@@ -200,6 +204,13 @@ async function createServer() {
     );
 
     return res.status(204).end();
+  });
+
+  app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (isMalformedJsonError(error)) {
+      return res.status(400).json({ error: 'Invalid JSON' });
+    }
+    return next(error);
   });
 
   // Create Vite server in middleware mode

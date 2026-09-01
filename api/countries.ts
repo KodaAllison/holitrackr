@@ -10,18 +10,30 @@ import {
 } from '../src/server/countryPayloads';
 import type { StoredCountryRow } from '../src/types/countriesApi';
 
-async function readRequestBody(req: IncomingMessage): Promise<unknown> {
+type RequestBodyResult =
+  | { success: true; value: unknown }
+  | { success: false }
+
+async function readRequestBody(req: IncomingMessage): Promise<RequestBodyResult> {
+  const contentType = typeof req.headers['content-type'] === 'string'
+    ? req.headers['content-type']
+    : '';
+  if (!/^application\/json(?:\s*;|$)/i.test(contentType)) {
+    return { success: true, value: undefined };
+  }
+
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   }
 
   const raw = Buffer.concat(chunks).toString('utf8');
-  if (!raw) return null;
+  if (!raw) return { success: true, value: undefined };
   try {
-    return JSON.parse(raw);
+    const value: unknown = JSON.parse(raw);
+    return { success: true, value };
   } catch {
-    return raw;
+    return { success: false };
   }
 }
 
@@ -72,6 +84,14 @@ export default async function handler(
   try {
     const method = (req.method ?? '').toUpperCase();
 
+    const requestBody = await readRequestBody(req);
+    if (!requestBody.success) {
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      return;
+    }
+
     // Require Better Auth session for all /api/countries routes.
     const session = await auth.api.getSession({
       headers: fromNodeHeaders(req.headers),
@@ -113,7 +133,7 @@ export default async function handler(
     }
 
     if (method === 'POST') {
-      const parsed = parseCreateCountryInput(await readRequestBody(req));
+      const parsed = parseCreateCountryInput(requestBody.value);
       if (!parsed.success) {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
@@ -137,7 +157,7 @@ export default async function handler(
     }
 
     if (method === 'PATCH') {
-      const input = parseUpdateCountryInput(await readRequestBody(req));
+      const input = parseUpdateCountryInput(requestBody.value);
       if (!input) {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
@@ -167,7 +187,7 @@ export default async function handler(
         return;
       }
 
-      const identity = parseCountryIdentity(await readRequestBody(req));
+      const identity = parseCountryIdentity(requestBody.value);
       if (!identity) {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
