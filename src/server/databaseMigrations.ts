@@ -52,4 +52,8 @@ export async function runDatabaseMigrations(): Promise<void> {
     END
     $$
   `)
+  await database.query(`
+    ALTER TABLE visited_countries
+      VALIDATE CONSTRAINT visited_countries_status_check
+  `)
 }
