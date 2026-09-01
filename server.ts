@@ -4,6 +4,7 @@ import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
 import { getMigrations } from 'better-auth/db';
 import { createServer as createViteServer } from 'vite';
 import { auth, authConfig } from './src/lib/auth';
+import { handlePublicStatsRequest, type PublicCountryRow } from './src/server/publicStats';
 
 async function createServer() {
   const app = express();
@@ -61,6 +62,27 @@ async function createServer() {
 
   // For our custom routes only (Better Auth recommends not running json middleware before its handler).
   app.use(express.json());
+
+  app.all('/api/public/stats', async (req, res) => {
+    const response = await handlePublicStatsRequest({
+      method: req.method,
+      origin: req.headers.origin,
+      ownerUserId: process.env.PUBLIC_STATS_OWNER_USER_ID,
+      database: {
+        query: async (statement, parameters) => {
+          const result = await authConfig.database.query<PublicCountryRow>(statement, parameters);
+          return { rows: result.rows };
+        },
+      },
+    });
+
+    for (const [name, value] of Object.entries(response.headers)) {
+      res.setHeader(name, value);
+    }
+
+    if (response.body) return res.status(response.status).json(response.body);
+    return res.status(response.status).end();
+  });
 
   app.get('/api/countries', async (req, res) => {
     const session = await auth.api.getSession({

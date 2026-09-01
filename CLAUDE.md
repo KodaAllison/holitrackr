@@ -9,6 +9,7 @@ npm run dev          # Start Express backend + Vite dev client together
 npm run dev:client   # Vite dev only (no backend)
 npm run build        # tsc + Vite production build
 npm run lint         # ESLint
+npm test             # Vitest contract tests
 npm run preview      # Vite preview of production build
 ```
 
@@ -61,7 +62,7 @@ created_at    TIMESTAMPTZ
 4. On first auth, localStorage data is migrated to the DB
 
 ### Vercel deployment
-`vercel.json` routes all traffic to the compiled server entry (`api/index.ts`). The Neon serverless Postgres instance can have a cold-start delay of up to 20 seconds; the server has a corresponding timeout.
+`vercel.json` rewrites Better Auth requests to `api/auth/[...all].ts` and leaves other `/api/**` paths to their matching Vercel Functions. Non-API paths fall back to the Vite SPA. `server.ts` mirrors the custom API routes for local development.
 
 ## Coding Conventions
 
@@ -102,6 +103,8 @@ created_at    TIMESTAMPTZ
 4. Add the migration (new column or table) to the migration block at the top of `server.ts` so it runs on next deploy
 5. Update `src/types/` if the response shape changes
 
+The intentional exception is `GET /api/public/stats`: it does not use the caller's session. It always scopes its parameterised query to server-only `PUBLIC_STATS_OWNER_USER_ID` and returns only the closed public response type. Keep its Express and Vercel adapters thin and put shared behavior in `src/server/publicStats.ts`.
+
 ## Feature Backlog
 
 See `FEATURES.md` in the repo root for the full ideas list and status of each feature.
@@ -118,3 +121,4 @@ Copy `.env.example` to `.env`. Required variables:
 | `VITE_BETTER_AUTH_URL` | Same value, exposed to the Vite client |
 | `GOOGLE_CLIENT_ID` | From Google Cloud Console OAuth credentials |
 | `GOOGLE_CLIENT_SECRET` | From Google Cloud Console OAuth credentials |
+| `PUBLIC_STATS_OWNER_USER_ID` | Optional Better Auth user id whose visited-country summary may be public; missing returns 503 |

@@ -79,11 +79,19 @@ export default async function handler(
     }
 
     if (method === 'GET') {
-      const { rows } = await pool.query<{ country_code: string; country_name: string }>(
-        `SELECT country_code, country_name
+      const { rows } = await pool.query<{
+        country_code: string
+        country_name: string
+        status: string
+        notes: string | null
+        visit_date: string | null
+        rating: number | null
+        tags: string | null
+      }>(
+        `SELECT country_code, country_name, status, notes, visit_date, rating, tags
          FROM visited_countries
          WHERE user_id = $1
-         ORDER BY created_at DESC`,
+         ORDER BY visit_date DESC NULLS LAST, created_at DESC`,
         [userId]
       );
 
@@ -94,6 +102,21 @@ export default async function handler(
           rows.map((r) => ({
             code: r.country_code,
             name: r.country_name,
+            status: r.status,
+            notes: r.notes ?? undefined,
+            visitedAt: r.visit_date ? r.visit_date.slice(0, 7) : undefined,
+            rating: r.rating ?? undefined,
+            tags: (() => {
+              if (!r.tags) return undefined;
+              try {
+                const value: unknown = JSON.parse(r.tags);
+                return Array.isArray(value)
+                  ? value.filter((tag): tag is string => typeof tag === 'string')
+                  : undefined;
+              } catch {
+                return undefined;
+              }
+            })(),
           }))
         )
       );
@@ -102,7 +125,50 @@ export default async function handler(
 
     if (method === 'POST') {
       const body = (await readRequestBody(req)) as
-        | { code?: unknown; name?: unknown }
+        | { code?: unknown; name?: unknown; status?: unknown; notes?: unknown }
+        | null;
+
+      const code = body?.code;
+      const name = body?.name;
+      const status = body?.status ?? 'visited';
+      if (typeof code !== 'string' || typeof name !== 'string') {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Invalid payload' }));
+        return;
+      }
+      if (status !== 'visited' && status !== 'bucketlist') {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Invalid status' }));
+        return;
+      }
+      const notes = typeof body?.notes === 'string' ? body.notes : null;
+
+      await pool.query(
+        `INSERT INTO visited_countries (user_id, country_code, country_name, status, notes)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (user_id, country_code, country_name) DO UPDATE
+           SET status = EXCLUDED.status,
+               notes = COALESCE(EXCLUDED.notes, visited_countries.notes)`,
+        [userId, code, name, status, notes]
+      );
+
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    if (method === 'PATCH') {
+      const body = (await readRequestBody(req)) as
+        | {
+            code?: unknown
+            name?: unknown
+            notes?: unknown
+            visitedAt?: unknown
+            rating?: unknown
+            tags?: unknown
+          }
         | null;
 
       const code = body?.code;
@@ -114,11 +180,21 @@ export default async function handler(
         return;
       }
 
+      const notes = typeof body?.notes === 'string' ? body.notes : null;
+      const visitDate = typeof body?.visitedAt === 'string' && /^\d{4}-\d{2}$/.test(body.visitedAt)
+        ? `${body.visitedAt}-01`
+        : null;
+      const rating = typeof body?.rating === 'number' && body.rating >= 1 && body.rating <= 5
+        ? Math.round(body.rating)
+        : null;
+      const tags = Array.isArray(body?.tags)
+        ? JSON.stringify(body.tags.filter((tag): tag is string => typeof tag === 'string'))
+        : null;
+
       await pool.query(
-        `INSERT INTO visited_countries (user_id, country_code, country_name)
-         VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING`,
-        [userId, code, name]
+        `UPDATE visited_countries SET notes = $1, visit_date = $2, rating = $3, tags = $4
+         WHERE user_id = $5 AND country_code = $6 AND country_name = $7`,
+        [notes, visitDate, rating, tags, userId, code, name]
       );
 
       res.statusCode = 204;
@@ -173,4 +249,3 @@ export default async function handler(
     }
   }
 }
-

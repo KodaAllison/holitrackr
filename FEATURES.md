@@ -113,6 +113,19 @@ Allow users to switch a country between "visited" and "bucket list" directly fro
 
 ---
 
+## 10. Public Country Stats API
+**Status:** Done
+
+A read-only portfolio endpoint at `GET /api/public/stats` exposes a privacy-limited snapshot for one server-configured owner.
+
+- Returns canonical country codes/names, continents, counts, and the snapshot generation time
+- Never exposes user ids, notes, dates, ratings, tags, coordinates, cities, or chronology
+- Uses shared Express/Vercel behavior, exact CORS permissions, and Vercel CDN caching
+- Owner is selected only through `PUBLIC_STATS_OWNER_USER_ID`, never caller input
+- Future private-by-default opt-in profiles are tracked separately in Koder ticket `t_mtikfd5y_b4962`
+
+---
+
 ## Adding Ideas
 
 When adding a new idea, include:
