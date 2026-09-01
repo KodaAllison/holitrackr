@@ -51,6 +51,7 @@ export const countryContinent: Record<string, Continent> = {
   RWA: 'Africa',
   STP: 'Africa',
   SEN: 'Africa',
+  SYC: 'Africa',
   SLE: 'Africa',
   SOM: 'Africa',
   ZAF: 'Africa',
@@ -289,6 +290,6 @@ const countryNameContinent: Record<string, Continent> = {
   Somaliland: 'Africa',
 }
 
-export function getContinent(code: string, name?: string): Continent {
-  return countryContinent[code] ?? (name ? countryNameContinent[name] : undefined) ?? ('Other' as Continent)
+export function getContinent(code: string, name?: string): Continent | 'Other' {
+  return countryContinent[code] ?? (name ? countryNameContinent[name] : undefined) ?? 'Other'
 }

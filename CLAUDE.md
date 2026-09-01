@@ -7,8 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev          # Start Express backend + Vite dev client together
 npm run dev:client   # Vite dev only (no backend)
+npm run db:migrate   # Apply Better Auth and app migrations to DATABASE_URL
 npm run build        # tsc + Vite production build
 npm run lint         # ESLint
+npm test             # Vitest contract tests
 npm run preview      # Vite preview of production build
 ```
 
@@ -31,7 +33,7 @@ The single entry point for the backend. It:
 - Mounts Better-Auth middleware at `/api/auth/**` for Google OAuth + session handling
 - Exposes REST endpoints under `/api/countries` (GET, POST, DELETE, PATCH)
 - Runs Vite as middleware in dev mode; serves `/dist` in production
-- Runs a PostgreSQL migration on startup — add new `ALTER TABLE` / `CREATE TABLE` statements to the migration block at the top of `server.ts`
+- Runs the shared PostgreSQL migrations on startup from `src/server/databaseMigrations.ts`
 
 **Current DB schema — `visited_countries`:**
 ```
@@ -61,7 +63,7 @@ created_at    TIMESTAMPTZ
 4. On first auth, localStorage data is migrated to the DB
 
 ### Vercel deployment
-`vercel.json` routes all traffic to the compiled server entry (`api/index.ts`). The Neon serverless Postgres instance can have a cold-start delay of up to 20 seconds; the server has a corresponding timeout.
+`vercel.json` rewrites Better Auth requests to `api/auth/[...all].ts` and leaves other `/api/**` paths to their matching Vercel Functions. Non-API paths fall back to the Vite SPA. `server.ts` mirrors the custom API routes for local development.
 
 ## Coding Conventions
 
@@ -99,8 +101,10 @@ created_at    TIMESTAMPTZ
 1. Add the route handler in `server.ts` following the existing pattern (check session with `auth.api.getSession`, query with `pool.query`)
 2. Always validate `session?.user?.id` before touching the DB — return 401 if missing
 3. Use parameterised queries only — never string-interpolate user input into SQL
-4. Add the migration (new column or table) to the migration block at the top of `server.ts` so it runs on next deploy
+4. Add schema changes to `src/server/databaseMigrations.ts`, then run `npm run db:migrate` for the deployment database
 5. Update `src/types/` if the response shape changes
+
+The intentional exception is `GET /api/public/stats`: it does not use the caller's session. It always scopes its parameterised query to server-only `PUBLIC_STATS_OWNER_USER_ID` and returns only the closed public response type. Keep its Express and Vercel adapters thin and put shared behavior in `src/server/publicStats.ts`.
 
 ## Feature Backlog
 
@@ -118,3 +122,4 @@ Copy `.env.example` to `.env`. Required variables:
 | `VITE_BETTER_AUTH_URL` | Same value, exposed to the Vite client |
 | `GOOGLE_CLIENT_ID` | From Google Cloud Console OAuth credentials |
 | `GOOGLE_CLIENT_SECRET` | From Google Cloud Console OAuth credentials |
+| `PUBLIC_STATS_OWNER_USER_ID` | Optional Better Auth user id whose visited-country summary may be public; missing returns 503 |

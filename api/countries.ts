@@ -1,20 +1,40 @@
 import { betterAuth } from 'better-auth';
 import { fromNodeHeaders } from 'better-auth/node';
-import { Pool } from '@neondatabase/serverless';
 import type { IncomingMessage, ServerResponse } from 'http';
+import {
+  parseCountryIdentity,
+  parseCreateCountryInput,
+  parseStoredStatus,
+  parseStoredTags,
+  parseUpdateCountryInput,
+} from '../src/server/countryPayloads';
+import { createNeonPool } from '../src/server/neonPool';
+import type { StoredCountryRow } from '../src/types/countriesApi';
 
-async function readRequestBody(req: IncomingMessage): Promise<unknown> {
+type RequestBodyResult =
+  | { success: true; value: unknown }
+  | { success: false }
+
+async function readRequestBody(req: IncomingMessage): Promise<RequestBodyResult> {
+  const contentType = typeof req.headers['content-type'] === 'string'
+    ? req.headers['content-type']
+    : '';
+  if (!/^application\/json(?:\s*;|$)/i.test(contentType)) {
+    return { success: true, value: undefined };
+  }
+
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   }
 
   const raw = Buffer.concat(chunks).toString('utf8');
-  if (!raw) return null;
+  if (!raw) return { success: true, value: undefined };
   try {
-    return JSON.parse(raw);
+    const value: unknown = JSON.parse(raw);
+    return { success: true, value };
   } catch {
-    return raw;
+    return { success: false };
   }
 }
 
@@ -39,7 +59,7 @@ if (process.env.VERCEL_PROJECT_PRODUCTION_URL)
   trustedOrigins.add(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`);
 if (process.env.VERCEL_BRANCH_URL) trustedOrigins.add(`https://${process.env.VERCEL_BRANCH_URL}`);
 
-const pool = new Pool({ connectionString: cleanUrl });
+const pool = createNeonPool(cleanUrl);
 
 const auth = betterAuth({
   database: pool,
@@ -65,6 +85,14 @@ export default async function handler(
   try {
     const method = (req.method ?? '').toUpperCase();
 
+    const requestBody = await readRequestBody(req);
+    if (!requestBody.success) {
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      return;
+    }
+
     // Require Better Auth session for all /api/countries routes.
     const session = await auth.api.getSession({
       headers: fromNodeHeaders(req.headers),
@@ -79,11 +107,11 @@ export default async function handler(
     }
 
     if (method === 'GET') {
-      const { rows } = await pool.query<{ country_code: string; country_name: string }>(
-        `SELECT country_code, country_name
+      const { rows } = await pool.query<StoredCountryRow>(
+        `SELECT country_code, country_name, status, notes, visit_date, rating, tags
          FROM visited_countries
          WHERE user_id = $1
-         ORDER BY created_at DESC`,
+         ORDER BY visit_date DESC NULLS LAST, created_at DESC`,
         [userId]
       );
 
@@ -94,6 +122,11 @@ export default async function handler(
           rows.map((r) => ({
             code: r.country_code,
             name: r.country_name,
+            status: parseStoredStatus(r.status),
+            notes: r.notes ?? undefined,
+            visitedAt: r.visit_date ? r.visit_date.slice(0, 7) : undefined,
+            rating: r.rating ?? undefined,
+            tags: parseStoredTags(r.tags),
           }))
         )
       );
@@ -101,13 +134,32 @@ export default async function handler(
     }
 
     if (method === 'POST') {
-      const body = (await readRequestBody(req)) as
-        | { code?: unknown; name?: unknown }
-        | null;
+      const parsed = parseCreateCountryInput(requestBody.value);
+      if (!parsed.success) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: parsed.error }));
+        return;
+      }
+      const { code, name, status, notes } = parsed.value;
 
-      const code = body?.code;
-      const name = body?.name;
-      if (typeof code !== 'string' || typeof name !== 'string') {
+      await pool.query(
+        `INSERT INTO visited_countries (user_id, country_code, country_name, status, notes)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (user_id, country_code, country_name) DO UPDATE
+           SET status = EXCLUDED.status,
+               notes = COALESCE(EXCLUDED.notes, visited_countries.notes)`,
+        [userId, code, name, status, notes]
+      );
+
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    if (method === 'PATCH') {
+      const input = parseUpdateCountryInput(requestBody.value);
+      if (!input) {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ error: 'Invalid payload' }));
@@ -115,10 +167,9 @@ export default async function handler(
       }
 
       await pool.query(
-        `INSERT INTO visited_countries (user_id, country_code, country_name)
-         VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING`,
-        [userId, code, name]
+        `UPDATE visited_countries SET notes = $1, visit_date = $2, rating = $3, tags = $4
+         WHERE user_id = $5 AND country_code = $6 AND country_name = $7`,
+        [input.notes, input.visitDate, input.rating, input.tags, userId, input.code, input.name]
       );
 
       res.statusCode = 204;
@@ -137,13 +188,8 @@ export default async function handler(
         return;
       }
 
-      const body = (await readRequestBody(req)) as
-        | { code?: unknown; name?: unknown }
-        | null;
-
-      const code = body?.code;
-      const name = body?.name;
-      if (typeof code !== 'string' || typeof name !== 'string') {
+      const identity = parseCountryIdentity(requestBody.value);
+      if (!identity) {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ error: 'Invalid payload' }));
@@ -153,7 +199,7 @@ export default async function handler(
       await pool.query(
         `DELETE FROM visited_countries
          WHERE user_id = $1 AND country_code = $2 AND country_name = $3`,
-        [userId, code, name]
+        [userId, identity.code, identity.name]
       );
 
       res.statusCode = 204;
@@ -173,4 +219,3 @@ export default async function handler(
     }
   }
 }
-

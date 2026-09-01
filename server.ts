@@ -1,46 +1,30 @@
 import 'dotenv/config';
 import express from 'express';
 import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
-import { getMigrations } from 'better-auth/db';
 import { createServer as createViteServer } from 'vite';
 import { auth, authConfig } from './src/lib/auth';
+import {
+  parseCountryIdentity,
+  parseCreateCountryInput,
+  parseStoredStatus,
+  parseStoredTags,
+  parseUpdateCountryInput,
+} from './src/server/countryPayloads';
+import { runDatabaseMigrations } from './src/server/databaseMigrations';
+import { handlePublicStatsRequest } from './src/server/publicStats';
+import type { StoredCountryRow } from './src/types/countriesApi';
+import type { PublicCountryRow } from './src/types/publicStats';
+
+function isMalformedJsonError(error: unknown): error is SyntaxError & { status: 400 } {
+  return error instanceof SyntaxError && 'status' in error && error.status === 400;
+}
 
 async function createServer() {
   const app = express();
 
   try {
-    const { runMigrations } = await getMigrations(authConfig);
-    await runMigrations();
+    await runDatabaseMigrations();
     console.log('Database migrations complete');
-
-    // Ensure our app table exists in dev as well.
-    const pool = authConfig.database;
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS visited_countries (
-        id SERIAL PRIMARY KEY,
-        user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
-        country_code TEXT NOT NULL,
-        country_name TEXT NOT NULL,
-        status VARCHAR(20) NOT NULL DEFAULT 'visited',
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE(user_id, country_code, country_name)
-      );
-    `);
-    await pool.query(`
-      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'visited'
-    `);
-    await pool.query(`
-      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS notes TEXT
-    `);
-    await pool.query(`
-      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS visit_date DATE
-    `);
-    await pool.query(`
-      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS rating INTEGER
-    `);
-    await pool.query(`
-      ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS tags TEXT
-    `);
   } catch (err) {
     console.error('Database migration failed — aborting startup:', err);
     process.exit(1);
@@ -59,7 +43,29 @@ async function createServer() {
     }
   });
 
-  // For our custom routes only (Better Auth recommends not running json middleware before its handler).
+  app.all('/api/public/stats', async (req, res) => {
+    const response = await handlePublicStatsRequest({
+      method: req.method,
+      origin: req.headers.origin,
+      ownerUserId: process.env.PUBLIC_STATS_OWNER_USER_ID,
+      database: {
+        query: async (statement, parameters) => {
+          const result = await authConfig.database.query<PublicCountryRow>(statement, parameters);
+          return { rows: result.rows };
+        },
+      },
+    });
+
+    for (const [name, value] of Object.entries(response.headers)) {
+      res.setHeader(name, value);
+    }
+
+    if (response.body) return res.status(response.status).json(response.body);
+    return res.status(response.status).end();
+  });
+
+  // For authenticated custom routes only. Keeping this after the public route ensures
+  // malformed request bodies cannot bypass the public handler's CORS and cache headers.
   app.use(express.json());
 
   app.get('/api/countries', async (req, res) => {
@@ -70,7 +76,7 @@ async function createServer() {
     const userId = session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { rows } = await authConfig.database.query<{ country_code: string; country_name: string; status: string; notes: string | null; visit_date: string | null; rating: number | null; tags: string | null }>(
+    const { rows } = await authConfig.database.query<StoredCountryRow>(
       `SELECT country_code, country_name, status, notes, visit_date, rating, tags
        FROM visited_countries
        WHERE user_id = $1
@@ -80,18 +86,14 @@ async function createServer() {
 
     return res.json(
       rows.map((r) => {
-        let parsedTags: string[] | undefined
-        if (r.tags) {
-          try { parsedTags = JSON.parse(r.tags) as string[] } catch { parsedTags = undefined }
-        }
         return {
           code: r.country_code,
           name: r.country_name,
-          status: r.status,
+          status: parseStoredStatus(r.status),
           notes: r.notes ?? undefined,
           visitedAt: r.visit_date ? r.visit_date.slice(0, 7) : undefined,
           rating: r.rating ?? undefined,
-          tags: parsedTags,
+          tags: parseStoredTags(r.tags),
         }
       })
     );
@@ -105,14 +107,11 @@ async function createServer() {
     const userId = session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { code, name, status = 'visited', notes } = (req.body ?? {}) as { code?: unknown; name?: unknown; status?: unknown; notes?: unknown };
-    if (typeof code !== 'string' || typeof name !== 'string') {
-      return res.status(400).json({ error: 'Invalid payload' });
+    const parsed = parseCreateCountryInput(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error });
     }
-    if (status !== 'visited' && status !== 'bucketlist') {
-      return res.status(400).json({ error: 'Invalid status' });
-    }
-    const notesValue = typeof notes === 'string' ? notes : null;
+    const { code, name, status, notes } = parsed.value;
 
     await authConfig.database.query(
       `INSERT INTO visited_countries (user_id, country_code, country_name, status, notes)
@@ -120,7 +119,7 @@ async function createServer() {
        ON CONFLICT (user_id, country_code, country_name) DO UPDATE
          SET status = EXCLUDED.status,
              notes = COALESCE(EXCLUDED.notes, visited_countries.notes)`,
-      [userId, code, name, status, notesValue]
+      [userId, code, name, status, notes]
     );
 
     return res.status(204).end();
@@ -134,24 +133,15 @@ async function createServer() {
     const userId = session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { code, name, notes, visitedAt, rating, tags } = (req.body ?? {}) as { code?: unknown; name?: unknown; notes?: unknown; visitedAt?: unknown; rating?: unknown; tags?: unknown };
-    if (typeof code !== 'string' || typeof name !== 'string') {
+    const input = parseUpdateCountryInput(req.body);
+    if (!input) {
       return res.status(400).json({ error: 'Invalid payload' });
     }
-    const notesValue = typeof notes === 'string' ? notes : null;
-    const visitDateValue =
-      typeof visitedAt === 'string' && /^\d{4}-\d{2}$/.test(visitedAt)
-        ? `${visitedAt}-01`
-        : null;
-    const ratingValue = typeof rating === 'number' && rating >= 1 && rating <= 5 ? Math.round(rating) : null;
-    const tagsValue = Array.isArray(tags)
-      ? JSON.stringify(tags.filter((t): t is string => typeof t === 'string'))
-      : null;
 
     await authConfig.database.query(
       `UPDATE visited_countries SET notes = $1, visit_date = $2, rating = $3, tags = $4
        WHERE user_id = $5 AND country_code = $6 AND country_name = $7`,
-      [notesValue, visitDateValue, ratingValue, tagsValue, userId, code, name]
+      [input.notes, input.visitDate, input.rating, input.tags, userId, input.code, input.name]
     );
 
     return res.status(204).end();
@@ -173,18 +163,25 @@ async function createServer() {
       return res.status(204).end();
     }
 
-    const { code, name } = (req.body ?? {}) as { code?: unknown; name?: unknown };
-    if (typeof code !== 'string' || typeof name !== 'string') {
+    const identity = parseCountryIdentity(req.body);
+    if (!identity) {
       return res.status(400).json({ error: 'Invalid payload' });
     }
 
     await pool.query(
       `DELETE FROM visited_countries
        WHERE user_id = $1 AND country_code = $2 AND country_name = $3`,
-      [userId, code, name]
+      [userId, identity.code, identity.name]
     );
 
     return res.status(204).end();
+  });
+
+  app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (isMalformedJsonError(error)) {
+      return res.status(400).json({ error: 'Invalid JSON' });
+    }
+    return next(error);
   });
 
   // Create Vite server in middleware mode
