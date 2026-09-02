@@ -1,4 +1,4 @@
-import type { Continent } from './continents.ts'
+import type { Continent } from './continents.js'
 
 export interface CanonicalCountryMetadata {
   alpha2: string
