@@ -90,7 +90,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   const [activeView, setActiveView] = useState<'map' | 'timeline'>('map')
   const [journalCountry, setJournalCountry] = useState<VisitedCountry | null>(null)
 
-  const refetchFromServer = async () => {
+  const refreshCountries = async () => {
     try {
       const latest = await countriesClient.list()
       setVisitedCountries(latest)
@@ -115,7 +115,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
       await countriesClient.updateJournal(country, updates)
     } catch (err) {
       console.warn('Failed to update journal:', err)
-      await refetchFromServer()
+      await refreshCountries()
     }
   }
 
@@ -237,7 +237,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
           }
         } catch (err) {
           console.warn('Failed to persist visited country:', err)
-          await refetchFromServer()
+          await refreshCountries()
         }
       })()
 
@@ -249,7 +249,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     setVisitedCountries(prev => prev.filter(v => !sameCountry(v, country)))
     void countriesClient.remove(country).catch(async (err) => {
       console.warn('Failed to remove country:', err)
-      await refetchFromServer()
+      await refreshCountries()
     })
   }
 
@@ -259,7 +259,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
       await countriesClient.reset()
     } catch (err) {
       console.warn('Failed to reset visited countries:', err)
-      await refetchFromServer()
+      await refreshCountries()
     }
   }
 

@@ -6,13 +6,12 @@ import { auth, authConfig } from './src/lib/auth';
 import {
   parseCountryIdentity,
   parseCreateCountryInput,
-  parseStoredStatus,
-  parseStoredTags,
   parseUpdateCountryInput,
+  serializeStoredCountry,
 } from './src/server/countryPayloads';
 import { runDatabaseMigrations } from './src/server/databaseMigrations';
 import { handlePublicStatsRequest } from './src/server/publicStats';
-import type { StoredCountryRow, VisitedCountryDto } from './src/types/countriesApi';
+import type { StoredCountryRow } from './src/types/countriesApi';
 import type { PublicCountryRow } from './src/types/publicStats';
 
 function isMalformedJsonError(error: unknown): error is SyntaxError & { status: 400 } {
@@ -84,19 +83,7 @@ async function createServer() {
       [userId]
     );
 
-    return res.json(
-      rows.map((r): VisitedCountryDto => {
-        return {
-          code: r.country_code,
-          name: r.country_name,
-          status: parseStoredStatus(r.status),
-          notes: r.notes ?? undefined,
-          visitedAt: r.visit_date ? r.visit_date.slice(0, 7) : undefined,
-          rating: r.rating ?? undefined,
-          tags: parseStoredTags(r.tags),
-        }
-      })
-    );
+    return res.json(rows.map(serializeStoredCountry));
   });
 
   app.post('/api/countries', async (req, res) => {

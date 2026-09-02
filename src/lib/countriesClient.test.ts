@@ -74,7 +74,14 @@ describe('HTTP countries client', () => {
   it('sends every mutation through the same authenticated JSON seam', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }))
     const client = createHttpCountriesClient(fetcher)
-    const spain: VisitedCountry = { code: 'ESP', name: 'Spain', status: 'visited' }
+    const spain: VisitedCountry = {
+      code: 'ESP',
+      name: 'Spain',
+      status: 'visited',
+      visitedAt: '2026-08',
+      rating: 5,
+      tags: ['food'],
+    }
 
     await client.add(spain)
     await client.remove(spain)
@@ -91,7 +98,7 @@ describe('HTTP countries client', () => {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(spain),
+        body: JSON.stringify({ code: 'ESP', name: 'Spain', status: 'visited' }),
       }],
       ['/api/countries', {
         method: 'DELETE',
@@ -129,6 +136,25 @@ describe('HTTP countries client', () => {
 })
 
 describe('in-memory countries client', () => {
+  it('matches the production fields persisted by add', async () => {
+    const client = createInMemoryCountriesClient()
+    const country: VisitedCountry = {
+      code: 'ESP',
+      name: 'Spain',
+      status: 'visited',
+      notes: 'Kept',
+      visitedAt: '2026-08',
+      rating: 5,
+      tags: ['not-persisted-by-add'],
+    }
+
+    await client.add(country)
+
+    await expect(client.list()).resolves.toEqual([
+      { code: 'ESP', name: 'Spain', status: 'visited', notes: 'Kept' },
+    ])
+  })
+
   it('implements the same list, upsert, journal, remove, and reset contract', async () => {
     const client = createInMemoryCountriesClient([
       { code: 'ESP', name: 'Spain', status: 'visited', notes: 'Keep me' },

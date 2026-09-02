@@ -1,5 +1,10 @@
-import type { VisitedCountryDto, CountryIdentity } from '../types/countriesApi'
+import type {
+  AddCountryInput,
+  CountryIdentity,
+  VisitedCountryDto,
+} from '../types/countriesApi'
 import type { VisitedCountry } from '../types/country'
+import { sameCountry } from './visitedCountries'
 
 export interface CountryJournalUpdates {
   notes: string
@@ -10,7 +15,7 @@ export interface CountryJournalUpdates {
 
 export interface CountriesClient {
   list(): Promise<VisitedCountry[]>
-  add(country: VisitedCountry): Promise<void>
+  add(country: AddCountryInput): Promise<void>
   remove(country: CountryIdentity): Promise<void>
   updateJournal(
     country: CountryIdentity,
@@ -149,7 +154,12 @@ export function createHttpCountriesClient(
     },
 
     async add(country) {
-      await jsonRequest('POST', country)
+      await jsonRequest('POST', {
+        code: country.code,
+        name: country.name,
+        status: country.status,
+        notes: country.notes,
+      })
     },
 
     async remove(country) {
@@ -187,12 +197,14 @@ export function createInMemoryCountriesClient(
     },
 
     async add(country) {
-      const index = countries.findIndex(
-        (candidate) =>
-          candidate.code === country.code && candidate.name === country.name
-      )
+      const index = countries.findIndex((candidate) => sameCountry(candidate, country))
       if (index === -1) {
-        countries.push(cloneCountry(country))
+        countries.push({
+          code: country.code,
+          name: country.name,
+          status: country.status,
+          notes: country.notes,
+        })
         return
       }
 
@@ -206,14 +218,13 @@ export function createInMemoryCountriesClient(
 
     async remove(country) {
       countries = countries.filter(
-        (candidate) =>
-          candidate.code !== country.code || candidate.name !== country.name
+        (candidate) => !sameCountry(candidate, country)
       )
     },
 
     async updateJournal(country, updates) {
       countries = countries.map((candidate) =>
-        candidate.code === country.code && candidate.name === country.name
+        sameCountry(candidate, country)
           ? {
               ...candidate,
               notes: updates.notes,
