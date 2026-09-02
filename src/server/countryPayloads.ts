@@ -1,7 +1,9 @@
 import type {
   CountryIdentity,
   CreateCountryParseResult,
+  StoredCountryRow,
   UpdateCountryInput,
+  VisitedCountryDto,
 } from '../types/countriesApi.js'
 import type { VisitedCountry } from '../types/country.js'
 
@@ -71,5 +73,19 @@ export function parseStoredTags(value: string | null): string[] | undefined {
       : undefined
   } catch {
     return undefined
+  }
+}
+
+export function serializeStoredCountry(
+  row: StoredCountryRow
+): VisitedCountryDto {
+  return {
+    code: row.country_code,
+    name: row.country_name,
+    status: parseStoredStatus(row.status),
+    notes: row.notes ?? undefined,
+    visitedAt: row.visit_date ? row.visit_date.slice(0, 7) : undefined,
+    rating: row.rating ?? undefined,
+    tags: parseStoredTags(row.tags),
   }
 }

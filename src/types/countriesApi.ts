@@ -15,6 +15,11 @@ export interface CountryIdentity {
   name: string
 }
 
+export type AddCountryInput = Pick<
+  VisitedCountry,
+  'code' | 'name' | 'status' | 'notes'
+>
+
 export interface CreateCountryInput extends CountryIdentity {
   status: VisitedCountry['status']
   notes: string | null
@@ -26,6 +31,9 @@ export interface UpdateCountryInput extends CountryIdentity {
   rating: number | null
   tags: string | null
 }
+
+/** JSON representation returned by the countries API. */
+export type VisitedCountryDto = VisitedCountry
 
 export type CreateCountryParseResult =
   | { success: true; value: CreateCountryInput }

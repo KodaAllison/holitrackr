@@ -4,9 +4,8 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import {
   parseCountryIdentity,
   parseCreateCountryInput,
-  parseStoredStatus,
-  parseStoredTags,
   parseUpdateCountryInput,
+  serializeStoredCountry,
 } from '../src/server/countryPayloads.js';
 import { createNeonPool } from '../src/server/neonPool.js';
 import type { StoredCountryRow } from '../src/types/countriesApi.js';
@@ -118,17 +117,7 @@ export default async function handler(
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(
-        JSON.stringify(
-          rows.map((r) => ({
-            code: r.country_code,
-            name: r.country_name,
-            status: parseStoredStatus(r.status),
-            notes: r.notes ?? undefined,
-            visitedAt: r.visit_date ? r.visit_date.slice(0, 7) : undefined,
-            rating: r.rating ?? undefined,
-            tags: parseStoredTags(r.tags),
-          }))
-        )
+        JSON.stringify(rows.map(serializeStoredCountry))
       );
       return;
     }
