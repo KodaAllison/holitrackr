@@ -2,14 +2,14 @@ import {
   canonicalCountryMetadata,
   isKnownContinent,
   legacyMinus99Alpha3ByCountryName,
-} from '../lib/countryMetadata.ts'
-import { getContinent } from '../lib/continents.ts'
+} from '../lib/countryMetadata.js'
+import { getContinent } from '../lib/continents.js'
 import type {
   PublicCountry,
   PublicCountryRow,
   PublicStatsHttpResponse,
   PublicStatsRequest,
-} from '../types/publicStats.ts'
+} from '../types/publicStats.js'
 
 const PUBLIC_STATS_QUERY = `SELECT country_code, country_name
 FROM visited_countries

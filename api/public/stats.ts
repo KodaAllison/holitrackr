@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'http'
-import { createNeonPool } from '../../src/server/neonPool.ts'
+import { createNeonPool } from '../../src/server/neonPool.js'
 import {
   handlePublicStatsRequest,
-} from '../../src/server/publicStats.ts'
+} from '../../src/server/publicStats.js'
 import type {
   PublicCountryRow,
   PublicStatsDatabase,
-} from '../../src/types/publicStats.ts'
+} from '../../src/types/publicStats.js'
 
 let pool: ReturnType<typeof createNeonPool> | undefined
 
