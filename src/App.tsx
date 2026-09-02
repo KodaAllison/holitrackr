@@ -10,6 +10,11 @@ import TripTimeline from './components/TripTimeline'
 import CountryDetailModal from './components/CountryDetailModal'
 import AuthForm from './components/AuthForm'
 import { useSession } from './lib/auth-client'
+import {
+  httpCountriesClient,
+  type CountriesClient,
+  type CountryJournalUpdates,
+} from './lib/countriesClient'
 import { sameCountry, findCountry, withStatus } from './lib/visitedCountries'
 
 const STORAGE_KEY_PREFIX = 'myatlas-visited-countries'
@@ -73,7 +78,11 @@ function loadVisitedCountries(userId?: string): VisitedCountry[] {
   }
 }
 
-function App() {
+interface AppProps {
+  countriesClient?: CountriesClient
+}
+
+function App({ countriesClient = httpCountriesClient }: AppProps) {
   const { data: session, isPending } = useSession()
   const [visitedCountries, setVisitedCountries] = useState<VisitedCountry[]>([])
   const [countries, setCountries] = useState<Country[]>([])
@@ -81,70 +90,18 @@ function App() {
   const [activeView, setActiveView] = useState<'map' | 'timeline'>('map')
   const [journalCountry, setJournalCountry] = useState<VisitedCountry | null>(null)
 
-  const fetchVisitedCountries = async (): Promise<VisitedCountry[]> => {
-    try {
-      const resp = await fetch('/api/countries', {
-        method: 'GET',
-        credentials: 'include',
-      })
-      if (!resp.ok) return []
-      const data = (await resp.json()) as unknown
-      if (!Array.isArray(data)) return []
-      const isRawCountry = (c: unknown): c is Record<string, unknown> => {
-        if (typeof c !== 'object' || c === null) return false
-        const obj = c as Record<string, unknown>
-        return typeof obj.code === 'string' && typeof obj.name === 'string'
-      }
-      return data.filter(isRawCountry).map((c): VisitedCountry => ({
-        code: c.code as string,
-        name: c.name as string,
-        status:
-          c.status === 'visited' || c.status === 'bucketlist'
-            ? c.status
-            : 'visited',
-        notes: typeof c.notes === 'string' ? c.notes : undefined,
-        visitedAt: typeof c.visitedAt === 'string' ? c.visitedAt : undefined,
-        rating: typeof c.rating === 'number' ? c.rating : undefined,
-        tags: Array.isArray(c.tags) ? (c.tags as unknown[]).filter((t): t is string => typeof t === 'string') : undefined,
-      }))
-    } catch {
-      return []
-    }
-  }
-
-  const insertVisitedCountry = async (country: VisitedCountry): Promise<void> => {
-    await fetch('/api/countries', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(country),
-    })
-  }
-
-  const deleteVisitedCountry = async (country: VisitedCountry): Promise<void> => {
-    await fetch('/api/countries', {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(country),
-    })
-  }
-
-  const resetVisitedCountriesOnServer = async (): Promise<void> => {
-    await fetch('/api/countries?reset=true', {
-      method: 'DELETE',
-      credentials: 'include',
-    })
-  }
-
   const refetchFromServer = async () => {
-    const latest = await fetchVisitedCountries()
-    setVisitedCountries(latest)
+    try {
+      const latest = await countriesClient.list()
+      setVisitedCountries(latest)
+    } catch (err) {
+      console.warn('Failed to refresh countries:', err)
+    }
   }
 
   const updateCountryJournal = async (
     country: VisitedCountry,
-    updates: { notes: string; visitedAt: string; rating: number | undefined; tags: string[] }
+    updates: CountryJournalUpdates
   ): Promise<void> => {
     const { notes, visitedAt, rating, tags } = updates
     setVisitedCountries(prev =>
@@ -155,13 +112,7 @@ function App() {
       )
     )
     try {
-      const resp = await fetch('/api/countries', {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: country.code, name: country.name, notes, visitedAt: visitedAt || null, rating: rating ?? null, tags }),
-      })
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      await countriesClient.updateJournal(country, updates)
     } catch (err) {
       console.warn('Failed to update journal:', err)
       await refetchFromServer()
@@ -178,7 +129,16 @@ function App() {
     if (session?.user?.id) {
       let cancelled = false
       const load = async () => {
-        const fromDb = await fetchVisitedCountries()
+        let fromDb: VisitedCountry[]
+        try {
+          fromDb = await countriesClient.list()
+        } catch (err) {
+          console.warn('Failed to load countries:', err)
+          if (!cancelled) {
+            setVisitedCountries(loadVisitedCountries(session.user.id))
+          }
+          return
+        }
         if (cancelled) return
 
         // One-time migration: if DB is empty, migrate existing localStorage for this user.
@@ -187,7 +147,7 @@ function App() {
           if (legacy.length > 0) {
             try {
               for (const c of legacy) {
-                await insertVisitedCountry(c)
+                await countriesClient.add(c)
               }
 
               // Clear local-only data after successful migration.
@@ -195,7 +155,7 @@ function App() {
                 `${STORAGE_KEY_PREFIX}-${session.user.id}`
               )
 
-              const refreshed = await fetchVisitedCountries()
+              const refreshed = await countriesClient.list()
               if (cancelled) return
               setVisitedCountries(refreshed.length > 0 ? refreshed : legacy)
               return
@@ -216,7 +176,7 @@ function App() {
         cancelled = true
       }
     }
-  }, [session?.user?.id])
+  }, [countriesClient, session?.user?.id])
 
   const toggleCountry = (country: VisitedCountry | Country, explicitStatus?: 'visited' | 'bucketlist') => {
     setVisitedCountries(prev => {
@@ -271,9 +231,9 @@ function App() {
       void (async () => {
         try {
           if (serverAction === 'delete') {
-            await deleteVisitedCountry({ code: country.code, name: country.name, status: existing?.status ?? 'visited' })
+            await countriesClient.remove(country)
           } else {
-            await insertVisitedCountry({ code: country.code, name: country.name, status: newStatus })
+            await countriesClient.add({ code: country.code, name: country.name, status: newStatus })
           }
         } catch (err) {
           console.warn('Failed to persist visited country:', err)
@@ -287,13 +247,16 @@ function App() {
 
   const removeCountry = (country: VisitedCountry) => {
     setVisitedCountries(prev => prev.filter(v => !sameCountry(v, country)))
-    void deleteVisitedCountry(country)
+    void countriesClient.remove(country).catch(async (err) => {
+      console.warn('Failed to remove country:', err)
+      await refetchFromServer()
+    })
   }
 
   const resetVisitedCountries = async () => {
     setVisitedCountries([])
     try {
-      await resetVisitedCountriesOnServer()
+      await countriesClient.reset()
     } catch (err) {
       console.warn('Failed to reset visited countries:', err)
       await refetchFromServer()

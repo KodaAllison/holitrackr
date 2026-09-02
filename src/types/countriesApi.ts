@@ -27,6 +27,9 @@ export interface UpdateCountryInput extends CountryIdentity {
   tags: string | null
 }
 
+/** JSON representation returned by the countries API. */
+export type VisitedCountryDto = VisitedCountry
+
 export type CreateCountryParseResult =
   | { success: true; value: CreateCountryInput }
   | { success: false; error: 'Invalid payload' | 'Invalid status' }

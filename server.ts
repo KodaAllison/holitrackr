@@ -12,7 +12,7 @@ import {
 } from './src/server/countryPayloads';
 import { runDatabaseMigrations } from './src/server/databaseMigrations';
 import { handlePublicStatsRequest } from './src/server/publicStats';
-import type { StoredCountryRow } from './src/types/countriesApi';
+import type { StoredCountryRow, VisitedCountryDto } from './src/types/countriesApi';
 import type { PublicCountryRow } from './src/types/publicStats';
 
 function isMalformedJsonError(error: unknown): error is SyntaxError & { status: 400 } {
@@ -85,7 +85,7 @@ async function createServer() {
     );
 
     return res.json(
-      rows.map((r) => {
+      rows.map((r): VisitedCountryDto => {
         return {
           code: r.country_code,
           name: r.country_name,

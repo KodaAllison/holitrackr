@@ -9,7 +9,7 @@ import {
   parseUpdateCountryInput,
 } from '../src/server/countryPayloads.js';
 import { createNeonPool } from '../src/server/neonPool.js';
-import type { StoredCountryRow } from '../src/types/countriesApi.js';
+import type { StoredCountryRow, VisitedCountryDto } from '../src/types/countriesApi.js';
 
 type RequestBodyResult =
   | { success: true; value: unknown }
@@ -119,7 +119,7 @@ export default async function handler(
       res.setHeader('Content-Type', 'application/json');
       res.end(
         JSON.stringify(
-          rows.map((r) => ({
+          rows.map((r): VisitedCountryDto => ({
             code: r.country_code,
             name: r.country_name,
             status: parseStoredStatus(r.status),
