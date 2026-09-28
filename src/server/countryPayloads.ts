@@ -6,6 +6,7 @@ import type {
   VisitedCountryDto,
 } from '../types/countriesApi.js'
 import type { VisitedCountry } from '../types/country.js'
+import { fromStoredVisitDate, toStoredVisitDate } from '../lib/visitDate.js'
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -47,9 +48,7 @@ export function parseUpdateCountryInput(value: unknown): UpdateCountryInput | un
   return {
     ...identity,
     notes: typeof body.notes === 'string' ? body.notes : null,
-    visitDate: typeof body.visitedAt === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(body.visitedAt)
-      ? `${body.visitedAt}-01`
-      : null,
+    visitDate: toStoredVisitDate(body.visitedAt),
     rating: typeof body.rating === 'number' && body.rating >= 1 && body.rating <= 5
       ? Math.round(body.rating)
       : null,
@@ -84,7 +83,7 @@ export function serializeStoredCountry(
     name: row.country_name,
     status: parseStoredStatus(row.status),
     notes: row.notes ?? undefined,
-    visitedAt: row.visit_date ? row.visit_date.slice(0, 7) : undefined,
+    visitedAt: fromStoredVisitDate(row.visit_date),
     rating: row.rating ?? undefined,
     tags: parseStoredTags(row.tags),
   }

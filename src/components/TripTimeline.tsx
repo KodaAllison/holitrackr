@@ -1,21 +1,9 @@
 import type { VisitedCountry } from '../types'
 import { countryKey, withStatus } from '../lib/visitedCountries'
+import { monthName, parseVisitMonth } from '../lib/visitDate'
 
 interface TripTimelineProps {
   visitedCountries: VisitedCountry[]
-}
-
-function parseYearMonth(visitedAt: string): { year: number; month: number } | null {
-  const parts = visitedAt.split('-')
-  if (parts.length < 2) return null
-  const year = parseInt(parts[0], 10)
-  const month = parseInt(parts[1], 10)
-  if (isNaN(year) || isNaN(month)) return null
-  return { year, month }
-}
-
-function formatMonth(month: number): string {
-  return new Date(2000, month - 1, 1).toLocaleDateString('en-US', { month: 'long' })
 }
 
 interface TimelineEntry {
@@ -31,11 +19,7 @@ export default function TripTimeline({ visitedCountries }: TripTimelineProps) {
   const yearMap = new Map<number, TimelineEntry[]>()
 
   for (const country of visited) {
-    if (!country.visitedAt) {
-      noDate.push(country)
-      continue
-    }
-    const parsed = parseYearMonth(country.visitedAt)
+    const parsed = parseVisitMonth(country.visitedAt)
     if (!parsed) {
       noDate.push(country)
       continue
@@ -110,7 +94,7 @@ export default function TripTimeline({ visitedCountries }: TripTimelineProps) {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="font-semibold text-gray-800">{country.name}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">{formatMonth(month)} {year}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{monthName(month)} {year}</p>
                       </div>
                     </div>
                     {country.notes && (
