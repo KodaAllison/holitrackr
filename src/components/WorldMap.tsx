@@ -6,6 +6,7 @@ import type { TooltipOptions } from 'leaflet'
 import type { GeoJSON as LeafletGeoJSON } from 'leaflet'
 import type { Country, VisitedCountry } from '../types'
 import { findCountry } from '../lib/visitedCountries'
+import { featureIdentity, featureName } from '../lib/featureIdentity'
 
 interface WorldMapProps {
   visitedCountries: VisitedCountry[]
@@ -35,26 +36,8 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
         // Extract country list for search
         if (onCountriesLoaded && data.features) {
           const countries = (data.features as Array<Feature<Geometry, GeoJsonProperties>>)
-            .map((feature) => {
-              const props =
-                feature.properties as
-                  | Record<string, unknown>
-                  | null
-                  | undefined
-
-              const name =
-                (typeof props?.name === 'string' && props.name) ||
-                (typeof props?.ADMIN === 'string' && props.ADMIN) ||
-                'Unknown'
-
-              const code =
-                (typeof props?.['ISO3166-1-Alpha-3'] === 'string' && props?.['ISO3166-1-Alpha-3']) ||
-                (typeof props?.ISO_A3 === 'string' && props?.ISO_A3) ||
-                ''
-
-              return { name, code }
-            })
-            .filter((c) => c.code && c.name !== 'Unknown')
+            .map(featureIdentity)
+            .filter((c): c is Country => c !== null)
             .sort((a, b) => a.name.localeCompare(b.name))
           
           onCountriesLoaded(countries)
@@ -71,15 +54,8 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
   }, [onCountriesLoaded])
 
   const getCountryStyle = (feature?: Feature<Geometry, GeoJsonProperties>): PathOptions => {
-    const countryCode =
-      feature?.properties?.['ISO3166-1-Alpha-3'] ||
-      feature?.properties?.ISO_A3
-    const countryName =
-      feature?.properties?.name || feature?.properties?.ADMIN || ''
-
-    const entry = (countryCode && countryName)
-      ? findCountry(visitedCountries, { code: countryCode, name: countryName })
-      : undefined
+    const identity = featureIdentity(feature)
+    const entry = identity ? findCountry(visitedCountries, identity) : undefined
 
     return {
       fillColor: entry?.status === 'visited' ? '#10b981' : entry?.status === 'bucketlist' ? '#f59e0b' : '#e5e7eb',
@@ -93,12 +69,7 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
     feature: Feature<Geometry, GeoJsonProperties>,
     layer: unknown
   ) => {
-    const countryName =
-      feature.properties?.name || feature.properties?.ADMIN || 'Unknown'
-
-    const countryCode =
-      feature.properties?.['ISO3166-1-Alpha-3'] ||
-      feature.properties?.ISO_A3
+    const identity = featureIdentity(feature)
 
     const leafletLayer = layer as unknown as {
       bindTooltip: (content: string, options: TooltipOptions) => void
@@ -111,7 +82,7 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
     }
     
     // Bind tooltip that shows automatically on hover
-    leafletLayer.bindTooltip(countryName, {
+    leafletLayer.bindTooltip(featureName(feature) ?? 'Unknown', {
       permanent: false,
       sticky: true,
       opacity: 1
@@ -125,8 +96,8 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
         })
       },
       mouseout: () => {
-        const currentEntry = (countryCode && countryName)
-          ? findCountry(visitedCountriesRef.current, { code: countryCode, name: countryName })
+        const currentEntry = identity
+          ? findCountry(visitedCountriesRef.current, identity)
           : undefined
         leafletLayer.setStyle({
           fillColor: currentEntry?.status === 'visited' ? '#10b981' : currentEntry?.status === 'bucketlist' ? '#f59e0b' : '#e5e7eb',
@@ -135,8 +106,8 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
         })
       },
       click: (e: { latlng: { lat: number; lng: number } }) => {
-        if (countryCode && countryName !== 'Unknown') {
-          setActivePopup({ code: countryCode as string, name: countryName, latlng: [e.latlng.lat, e.latlng.lng] })
+        if (identity) {
+          setActivePopup({ ...identity, latlng: [e.latlng.lat, e.latlng.lng] })
         }
       },
     })
