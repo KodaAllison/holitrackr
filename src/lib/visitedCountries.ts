@@ -55,3 +55,53 @@ export function withStatus(
 ): VisitedCountry[] {
   return list.filter(v => v.status === status)
 }
+
+/** What the server must do to match a status transition. */
+export type StatusAction =
+  | { type: 'upsert'; status: Status }
+  | { type: 'remove' }
+
+export interface StatusTransition {
+  next: VisitedCountry[]
+  action: StatusAction
+}
+
+/**
+ * The status-cycle rule for a country, as a pure function of the current list.
+ *
+ * - No `explicitStatus` (map click): absent → visited → bucketlist → removed.
+ * - With `explicitStatus` (search or map menu): selecting the country's current
+ *   status removes it; otherwise it is added or switched to that status.
+ *
+ * Switching status updates the entry in place so its journal fields survive.
+ */
+export function nextVisitedState(
+  prev: VisitedCountry[],
+  country: CountryIdentity,
+  explicitStatus?: Status
+): StatusTransition {
+  const current = statusOf(prev, country)
+
+  let target: Status | undefined
+  if (explicitStatus !== undefined) {
+    target = current === explicitStatus ? undefined : explicitStatus
+  } else if (current === undefined) {
+    target = 'visited'
+  } else if (current === 'visited') {
+    target = 'bucketlist'
+  }
+
+  if (target === undefined) {
+    return {
+      next: prev.filter(v => !sameCountry(v, country)),
+      action: { type: 'remove' },
+    }
+  }
+
+  const status = target
+  const next =
+    current === undefined
+      ? [...prev, { code: country.code, name: country.name, status }]
+      : prev.map(v => (sameCountry(v, country) ? { ...v, status } : v))
+  return { next, action: { type: 'upsert', status } }
+}

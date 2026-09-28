@@ -15,7 +15,7 @@ import {
   type CountriesClient,
   type CountryJournalUpdates,
 } from './lib/countriesClient'
-import { sameCountry, findCountry, withStatus } from './lib/visitedCountries'
+import { sameCountry, findCountry, withStatus, nextVisitedState } from './lib/visitedCountries'
 
 const STORAGE_KEY_PREFIX = 'myatlas-visited-countries'
 const LEGACY_STORAGE_KEY_PREFIX = 'holitrackr-visited-countries'
@@ -180,60 +180,14 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
 
   const toggleCountry = (country: VisitedCountry | Country, explicitStatus?: 'visited' | 'bucketlist') => {
     setVisitedCountries(prev => {
-      const existing = findCountry(prev, country)
-
-      let next: VisitedCountry[]
-      let serverAction: 'insert' | 'delete'
-      let newStatus: 'visited' | 'bucketlist' = 'visited'
-
-      if (explicitStatus !== undefined) {
-        // Search-triggered: explicit status provided
-        if (existing && existing.status === explicitStatus) {
-          // Already that exact status — remove
-          next = prev.filter(v => !sameCountry(v, country))
-          serverAction = 'delete'
-        } else if (existing) {
-          // Exists with different status — update in place
-          newStatus = explicitStatus
-          next = prev.map(v =>
-            sameCountry(v, country)
-              ? { ...v, status: explicitStatus }
-              : v
-          )
-          serverAction = 'insert'
-        } else {
-          // Not in list — add
-          newStatus = explicitStatus
-          next = [...prev, { code: country.code, name: country.name, status: explicitStatus }]
-          serverAction = 'insert'
-        }
-      } else {
-        // Map click cycle: not present → visited → bucketlist → remove
-        if (!existing) {
-          newStatus = 'visited'
-          next = [...prev, { code: country.code, name: country.name, status: 'visited' }]
-          serverAction = 'insert'
-        } else if (existing.status === 'visited') {
-          newStatus = 'bucketlist'
-          next = prev.map(v =>
-            sameCountry(v, country)
-              ? { ...v, status: 'bucketlist' }
-              : v
-          )
-          serverAction = 'insert'
-        } else {
-          // bucketlist → remove
-          next = prev.filter(v => !sameCountry(v, country))
-          serverAction = 'delete'
-        }
-      }
+      const { next, action } = nextVisitedState(prev, country, explicitStatus)
 
       void (async () => {
         try {
-          if (serverAction === 'delete') {
+          if (action.type === 'remove') {
             await countriesClient.remove(country)
           } else {
-            await countriesClient.add({ code: country.code, name: country.name, status: newStatus })
+            await countriesClient.add({ code: country.code, name: country.name, status: action.status })
           }
         } catch (err) {
           console.warn('Failed to persist visited country:', err)
