@@ -2,20 +2,13 @@ import { useState, useEffect, useRef } from 'react'
 import type { VisitedCountry } from '../types'
 import { getContinent } from '../lib/continents'
 import { countryKey, withStatus } from '../lib/visitedCountries'
+import { formatVisitMonth } from '../lib/visitDate'
 
 interface VisitedCountriesListProps {
   visitedCountries: VisitedCountry[]
   onRemove: (country: VisitedCountry) => void
   onReset?: () => void
   onEditJournal?: (country: VisitedCountry) => void
-}
-
-function formatMonthYear(yyyyMM: string | undefined): string | null {
-  if (!yyyyMM) return null
-  const [year, month] = yyyyMM.split('-')
-  const date = new Date(Number(year), Number(month) - 1)
-  if (isNaN(date.getTime())) return null
-  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 
 interface CountryItemProps {
@@ -29,7 +22,7 @@ interface CountryItemProps {
 
 function CountryItem({ country, menuOpen, onMenuToggle, onMenuClose, onEditJournal, onRemove }: CountryItemProps) {
   const menuRef = useRef<HTMLDivElement>(null)
-  const dateLabel = formatMonthYear(country.visitedAt)
+  const dateLabel = formatVisitMonth(country.visitedAt)
 
   useEffect(() => {
     if (!menuOpen) return
