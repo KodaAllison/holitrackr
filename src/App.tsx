@@ -6,7 +6,8 @@ import Footer from './components/Footer'
 import Stats from './components/Stats'
 import CountrySearch from './components/CountrySearch'
 import CountrySidebar from './components/CountrySidebar'
-import UndoToast from './components/UndoToast'
+import Toast from './components/Toast'
+import { detectMilestone, markMilestoneSeen, milestoneMessage, seenMilestones, type Milestone } from './lib/milestones'
 import { journalValuesOf } from './lib/journal'
 import TripTimeline from './components/TripTimeline'
 import CountryDetailModal from './components/CountryDetailModal'
@@ -91,7 +92,9 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   const [sessionCheckTimedOut, setSessionCheckTimedOut] = useState(false)
   const [activeView, setActiveView] = useState<'map' | 'timeline'>('map')
   const [journalCountry, setJournalCountry] = useState<VisitedCountry | null>(null)
-  const [mapFocus, setMapFocus] = useState<{ country: Country; seq: number } | null>(null)
+  const [mapFocus, setMapFocus] = useState<{ country: Country; seq: number; pulse?: boolean } | null>(null)
+  const [milestone, setMilestone] = useState<Milestone | null>(null)
+  const dismissMilestone = useCallback(() => setMilestone(null), [])
   const [selected, setSelected] = useState<Country | null>(null)
   const [removed, setRemoved] = useState<VisitedCountry | null>(null)
   // Derived: the selection disappears if the country is removed.
@@ -193,7 +196,19 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     }
   }, [countriesClient, session?.user?.id])
 
-  const toggleCountry = (country: VisitedCountry | Country, explicitStatus?: 'visited' | 'bucketlist') => {
+  /** Returns true when the change reached a milestone (which also focuses the map). */
+  const toggleCountry = (country: VisitedCountry | Country, explicitStatus?: 'visited' | 'bucketlist'): boolean => {
+    // Milestone moments: celebrate once per milestone, per user.
+    const userId = session?.user?.id
+    const { next: after } = nextVisitedState(visitedCountries, country, explicitStatus)
+    const reached = detectMilestone(visitedCountries, after, country)
+    let celebrated = false
+    if (userId && reached && !seenMilestones(userId).has(reached.id)) {
+      celebrated = true
+      markMilestoneSeen(userId, reached.id)
+      setMilestone(reached)
+      setMapFocus(prev => ({ country, seq: (prev?.seq ?? 0) + 1, pulse: true }))
+    }
     setVisitedCountries(prev => {
       const { next, action } = nextVisitedState(prev, country, explicitStatus)
 
@@ -212,6 +227,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
 
       return next
     })
+    return celebrated
   }
 
   const removeCountry = (country: VisitedCountry) => {
@@ -291,7 +307,10 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
         />
       )}
       {removed && (
-        <UndoToast message={`Removed ${removed.name}`} onUndo={() => { void undoRemove() }} onDismiss={dismissUndo} />
+        <Toast message={`Removed ${removed.name}`} action={{ label: 'Undo', onClick: () => { void undoRemove() } }} onDismiss={dismissUndo} />
+      )}
+      {milestone && (
+        <Toast message={milestoneMessage(milestone)} tone="celebrate" offset={removed ? 1 : 0} onDismiss={dismissMilestone} />
       )}
       <Header user={{ name: session.user.name, email: session.user.email }} />
 
@@ -332,8 +351,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
             countries={countries}
             visitedCountries={visitedCountries}
             onCountrySelect={(country, status) => {
-              toggleCountry(country, status)
-              focusMap(country)
+              if (!toggleCountry(country, status)) focusMap(country)
             }}
           />
         )}

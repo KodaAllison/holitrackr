@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { geoOrthographic, type GeoStream } from 'd3-geo'
+import { geoOrthographic, type GeoProjection, type GeoStream } from 'd3-geo'
 import type { CountryIdentity } from '../visitedCountries'
 import { countryKey } from '../visitedCountries'
 import { clusterAt, type Cluster } from './clusters'
@@ -14,7 +14,8 @@ export interface GlobeMapOptions extends MapViewOptions {
   /** Coarse countries, drawn while the globe moves. Falls back to `countries`. */
   motionCountries: IndexedCountry[] | null
   /** Turn to face this country whenever `seq` changes. */
-  focus?: { country: CountryIdentity; seq: number } | null
+  /** With `pulse`, a ring pulses on the country once the turn lands (milestones). */
+  focus?: { country: CountryIdentity; seq: number; pulse?: boolean } | null
   /** Where to start (e.g. the view saved before switching to the flat map). */
   initialView?: GlobeView
   /** Receives the current rotation and zoom, for the globe → flat morph. */
@@ -29,6 +30,7 @@ const IDLE_MS = 4000
 /** A press that moves further than this (px) is a drag, not a click. */
 const CLICK_SLOP = 4
 const IDENTITY = { k: 1, x: 0, y: 0 }
+const PULSE_MS = 1400
 
 interface Turn {
   at: (t: number) => Rotation
@@ -63,6 +65,7 @@ export function useGlobeMap(options: GlobeMapOptions) {
   const lastFrame = useRef(0)
   const idleTimer = useRef(0)
   const reduced = useRef(prefersReducedMotion())
+  const pulse = useRef<{ country: IndexedCountry; start: number } | null>(null)
 
   const radius = globeRadius(size)
 
@@ -116,6 +119,7 @@ export function useGlobeMap(options: GlobeMapOptions) {
         countries, statusOf: opts.statusOf, rim: true,
         hoveredKey: opts.hoveredKey, selectedKey: opts.selectedKey, hatch: hatch.current,
       })
+      moving = drawPulse(ctx, projection, now) || moving
     }
 
     if (moving) {
@@ -147,6 +151,30 @@ export function useGlobeMap(options: GlobeMapOptions) {
     window.clearTimeout(idleTimer.current)
   }, [])
 
+  /** Expanding ring on a milestone country; returns true while still animating. */
+  const drawPulse = (ctx: CanvasRenderingContext2D, projection: GeoProjection, now: number): boolean => {
+    const p = pulse.current
+    if (!p || now < p.start) return p !== null
+    const u = (now - p.start) / PULSE_MS
+    if (u >= 1) {
+      pulse.current = null
+      return false
+    }
+    const at = projection(p.country.anchor)
+    if (!at) return true
+    for (const offset of [0, 0.35]) {
+      const v = u - offset
+      if (v < 0 || v > 0.65) continue
+      const t = v / 0.65
+      ctx.beginPath()
+      ctx.arc(at[0], at[1], 6 + 34 * t, 0, 2 * Math.PI)
+      ctx.strokeStyle = `rgba(11,122,83,${0.8 * (1 - t)})`
+      ctx.lineWidth = 3 * (1 - t) + 1
+      ctx.stroke()
+    }
+    return true
+  }
+
   const turnToPoint = useCallback((point: LonLat) => {
     velocity.current = [0, 0]
     const { at, duration } = turnTo(rotation.current, point)
@@ -167,8 +195,14 @@ export function useGlobeMap(options: GlobeMapOptions) {
     if (!target || !list) return
     const key = countryKey(target.country)
     const match = list.find(c => countryKey(c.identity) === key)
-    if (match) turnToCountry(match)
-  }, [focusSeq, countries, turnToCountry])
+    if (!match) return
+    turnToCountry(match)
+    // Reduced motion: the turn is instant and there's no pulse (the toast still shows).
+    if (target.pulse && !reduced.current) {
+      pulse.current = { country: match, start: performance.now() + (turn.current?.duration ?? 0) }
+      kick()
+    }
+  }, [focusSeq, countries, turnToCountry, kick])
 
   const zoomBy = useCallback((factor: number) => {
     zoom.current = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom.current * factor))
