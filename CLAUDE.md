@@ -55,6 +55,7 @@ created_at    TIMESTAMPTZ
 - `src/components/WorldMap.tsx` — canvas world map: spinnable globe on desktop (`GlobeMapSurface`) with a Globe / Flat toggle that unrolls between them (`MorphMapSurface`, choice kept in localStorage); always flat below `lg` (`FlatMapSurface`); country clicks bubble up via callback
 - `src/lib/mapEngine/` — the map engine: country index + hit-testing, micro-state clustering, canvas renderer, `useFlatMap` (d3-zoom) and `useGlobeMap` (drag/inertia/idle spin, great-circle turns) hooks
 - `src/lib/worldAtlas.ts` — loads the compact country TopoJSON in `src/data/` (`motion` or `detail`); rebuild the data with `node scripts/build-world-atlas.mjs`
+- `src/components/TripTimeline.tsx` — timeline v2: `TimelineMap` (map fills in, great-circle legs), `TimelineRuler` (draggable playhead slider, Play), `TimelineFeed` (oldest first); data from `src/lib/timelineModel.ts`
 - `src/components/Header.tsx` — navbar; accepts optional `user` prop to render `UserMenu`
 - `src/components/Stats.tsx` — visited/bucket-list counts bar
 - `src/components/VisitedCountriesList.tsx` — sidebar list with remove, reset, journal edit

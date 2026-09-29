@@ -1,0 +1,115 @@
+import type { VisitedCountry } from '../types'
+import { getContinent, type Continent } from './continents'
+import { isKnownContinent } from './countryMetadata'
+import { parseVisitMonth } from './visitDate'
+
+/**
+ * The timeline's data, derived from the visited-countries list. Time is
+ * measured in whole months since year 0 (`year * 12 + month - 1`), so the
+ * ruler and the feed agree on ordering without any Date maths.
+ */
+export interface TimelineTrip {
+  country: VisitedCountry
+  /** Months since year 0. */
+  at: number
+  year: number
+  /** 1-12 */
+  month: number
+  /** Set on the trip that first reached this continent. */
+  firstIn?: Continent
+}
+
+export interface TimelineYear {
+  year: number
+  trips: TimelineTrip[]
+}
+
+export interface TimelineModel {
+  /** Visited countries with a date, oldest first. */
+  trips: TimelineTrip[]
+  years: TimelineYear[]
+  /** Bucket-list countries with a "Hoping to go" date, soonest first. */
+  planned: TimelineTrip[]
+  /** Visited countries without a date. */
+  undated: VisitedCountry[]
+  /** Ruler range in months: January of the first trip's year to the end of the last year shown. */
+  start: number
+  end: number
+  /** The current month. */
+  now: number
+}
+
+export function monthIndex(year: number, month: number): number {
+  return year * 12 + month - 1
+}
+
+function toTrip(country: VisitedCountry): TimelineTrip | null {
+  const parsed = parseVisitMonth(country.visitedAt)
+  return parsed ? { country, at: monthIndex(parsed.year, parsed.month), ...parsed } : null
+}
+
+const byTime = (a: TimelineTrip, b: TimelineTrip) => a.at - b.at || a.country.name.localeCompare(b.country.name)
+
+export function buildTimeline(countries: VisitedCountry[], today: Date): TimelineModel {
+  const now = monthIndex(today.getFullYear(), today.getMonth() + 1)
+  const trips: TimelineTrip[] = []
+  const planned: TimelineTrip[] = []
+  const undated: VisitedCountry[] = []
+
+  for (const country of countries) {
+    const trip = toTrip(country)
+    if (country.status === 'bucketlist') {
+      // Only future plans belong on the "Next" side of the ruler.
+      if (trip && trip.at >= now) planned.push(trip)
+    } else if (trip) {
+      trips.push(trip)
+    } else {
+      undated.push(country)
+    }
+  }
+  trips.sort(byTime)
+  planned.sort(byTime)
+  undated.sort((a, b) => a.name.localeCompare(b.name))
+
+  const seen = new Set<Continent>()
+  const years: TimelineYear[] = []
+  for (const trip of trips) {
+    const continent = getContinent(trip.country.code, trip.country.name)
+    if (isKnownContinent(continent) && !seen.has(continent)) {
+      seen.add(continent)
+      trip.firstIn = continent
+    }
+    const last = years[years.length - 1]
+    if (last?.year === trip.year) last.trips.push(trip)
+    else years.push({ year: trip.year, trips: [trip] })
+  }
+
+  const firstYear = trips[0]?.year ?? planned[0]?.year ?? today.getFullYear()
+  const lastAt = Math.max(now, planned[planned.length - 1]?.at ?? now)
+  const lastYear = Math.floor(lastAt / 12)
+  return { trips, years, planned, undated, start: monthIndex(firstYear, 1), end: monthIndex(lastYear, 12), now }
+}
+
+/**
+ * The trip nearest to month `at`, if within `tolerance` months; otherwise
+ * null. Used to snap the playhead to trips while dragging.
+ */
+export function nearestTrip(trips: TimelineTrip[], at: number, tolerance: number): number | null {
+  let best: number | null = null
+  let bestDistance = tolerance
+  trips.forEach((trip, i) => {
+    const distance = Math.abs(trip.at - at)
+    if (distance <= bestDistance) {
+      best = i
+      bestDistance = distance
+    }
+  })
+  return best
+}
+
+/** The index of the last trip at or before month `at`, or -1 if none. */
+export function tripAtOrBefore(trips: TimelineTrip[], at: number): number {
+  let index = -1
+  trips.forEach((trip, i) => { if (trip.at <= at) index = i })
+  return index
+}

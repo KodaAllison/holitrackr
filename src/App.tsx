@@ -343,7 +343,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
         </div>
       ) : (
         <div className="container mx-auto max-w-6xl">
-          <TripTimeline visitedCountries={visitedCountries} />
+          <TripTimeline visitedCountries={visitedCountries} onOpenJournal={setJournalCountry} />
         </div>
       )}
       <Footer />

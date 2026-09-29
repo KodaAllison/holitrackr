@@ -75,7 +75,7 @@ Social layer on top of the personal map.
 ---
 
 ## 4. Trip Timeline
-**Status:** Done (v1). v2 planned in Atlas v2.
+**Status:** v2 done on `atlas-v2` (scrubbable journey below); v1 is what `main` ships.
 
 A chronological, narrative view of travel history.
 
