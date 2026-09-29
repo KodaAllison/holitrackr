@@ -8,15 +8,19 @@ import { centerOf, decay, dragRotate, turnTo, type LonLat, type Rotation } from 
 import { CLUSTER_RADIUS, createHatch, drawMap, ShapeCache } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
 import type { MapViewOptions } from './useFlatMap'
+import { DEFAULT_GLOBE, globeRadius, type GlobeView } from './views'
 
 export interface GlobeMapOptions extends MapViewOptions {
   /** Coarse countries, drawn while the globe moves. Falls back to `countries`. */
   motionCountries: IndexedCountry[] | null
   /** Turn to face this country whenever `seq` changes. */
   focus?: { country: CountryIdentity; seq: number } | null
+  /** Where to start (e.g. the view saved before switching to the flat map). */
+  initialView?: GlobeView
+  /** Receives the current rotation and zoom, for the globe → flat morph. */
+  viewRef?: React.MutableRefObject<GlobeView | null>
 }
 
-const PAD = 12
 const MIN_ZOOM = 1
 const MAX_ZOOM = 6
 /** Idle spin speed (deg/ms) and how long input must be quiet before it starts. */
@@ -46,8 +50,8 @@ function prefersReducedMotion(): boolean {
 export function useGlobeMap(options: GlobeMapOptions) {
   const { containerRef, canvasRef, size } = useCanvasSize()
   const latest = useRef(options)
-  const rotation = useRef<Rotation>([-15, -25])
-  const zoom = useRef(1)
+  const rotation = useRef<Rotation>((options.initialView ?? DEFAULT_GLOBE).rotate)
+  const zoom = useRef((options.initialView ?? DEFAULT_GLOBE).zoom)
   const velocity = useRef<[number, number]>([0, 0])
   const turn = useRef<Turn | null>(null)
   const press = useRef<{ x: number; y: number; t: number; moved: boolean } | null>(null)
@@ -60,7 +64,7 @@ export function useGlobeMap(options: GlobeMapOptions) {
   const idleTimer = useRef(0)
   const reduced = useRef(prefersReducedMotion())
 
-  const radius = Math.max(1, Math.min(size.width, size.height) / 2 - PAD)
+  const radius = globeRadius(size)
 
   const projectionFor = useCallback((rotate: Rotation, clip = true) => {
     const p = geoOrthographic()
@@ -96,6 +100,7 @@ export function useGlobeMap(options: GlobeMapOptions) {
       moving = true
     }
     moving ||= press.current?.moved === true
+    if (latest.current.viewRef) latest.current.viewRef.current = { rotate: rotation.current, zoom: zoom.current }
 
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')

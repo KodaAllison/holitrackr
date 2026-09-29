@@ -207,7 +207,7 @@ source pinned to a commit:
 ---
 
 ## 12. Globe map (desktop default) + Globe / Flat toggle
-**Status:** In progress (Atlas v2). Engine, flat map and desktop globe have landed; the Globe / Flat toggle is next.
+**Status:** In progress (Atlas v2). Engine, flat map, desktop globe and the Globe / Flat toggle have landed; map chrome and the list/detail panel are next.
 
 - **Engine:** d3-geo on a canvas, with orthographic for the globe, Equal Earth
   for flat, and a blended projection for the morph. It replaces Leaflet

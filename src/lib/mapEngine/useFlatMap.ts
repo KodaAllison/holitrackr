@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { geoEqualEarth } from 'd3-geo'
 import { select } from 'd3-selection'
 import { zoom as d3zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom'
 import type { VisitedCountry } from '../../types'
 import { clusterAt, type Cluster } from './clusters'
 import { countryAt, type IndexedCountry } from './countryIndex'
+import { ease } from './globeMotion'
 import { CLUSTER_RADIUS, createHatch, drawMap, ShapeCache, type ViewTransform } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
+import { flatProjection } from './views'
 
 type Status = VisitedCountry['status']
 
@@ -20,15 +21,23 @@ export interface MapViewOptions {
   onMoveStart: () => void
 }
 
+export interface FlatMapOptions extends MapViewOptions {
+  /** Once the data is in, animate to fit the user's marked countries. */
+  fitOnOpen?: boolean
+  /** Receives the current pan/zoom, for the flat → globe morph. */
+  viewRef?: React.MutableRefObject<ViewTransform | null>
+}
+
 const MAX_ZOOM = 12
-const PAD = 4
+const FIT_MAX_ZOOM = 6
+const FIT_MS = 750
 
 /**
  * The flat (Equal Earth) map on a canvas: sizing and devicePixelRatio,
  * d3-zoom pan/zoom, on-demand redraws (nothing runs while idle, so a hidden
  * tab costs nothing) and hit-testing.
  */
-export function useFlatMap(options: MapViewOptions) {
+export function useFlatMap(options: FlatMapOptions) {
   const { containerRef, canvasRef, size } = useCanvasSize()
 
   const latest = useRef(options)
@@ -38,10 +47,7 @@ export function useFlatMap(options: MapViewOptions) {
   const hatch = useRef<CanvasPattern | null>(null)
   const zoomBehavior = useRef<ZoomBehavior<HTMLCanvasElement, unknown> | null>(null)
 
-  const projection = useMemo(() => geoEqualEarth().fitExtent(
-    [[PAD, PAD], [Math.max(PAD + 1, size.width - PAD), Math.max(PAD + 1, size.height - PAD)]],
-    { type: 'Sphere' }
-  ), [size])
+  const projection = useMemo(() => flatProjection(size), [size])
   const shapes = useMemo(() => new ShapeCache(projection), [projection])
 
   const draw = useCallback(() => {
@@ -84,12 +90,66 @@ export function useFlatMap(options: MapViewOptions) {
       .extent([[0, 0], [size.width, size.height]])
       .translateExtent([[0, 0], [size.width, size.height]])
       .on('start', () => latest.current.onMoveStart())
-      .on('zoom', event => { transform.current = event.transform; requestDraw() })
+      .on('zoom', event => {
+        transform.current = event.transform
+        if (latest.current.viewRef) latest.current.viewRef.current = event.transform
+        requestDraw()
+      })
     const selection = select(canvas)
     selection.call(behavior).call(behavior.transform, zoomIdentity)
     zoomBehavior.current = behavior
     return () => { selection.on('.zoom', null) }
   }, [canvasRef, size, requestDraw])
+
+  const fitAnim = useRef(0)
+
+  /** Pan/zoom to frame the marked countries (the whole world if none). */
+  const fitMine = useCallback(() => {
+    const canvas = canvasRef.current
+    const behavior = zoomBehavior.current
+    const { countries, statusOf } = latest.current
+    if (!canvas || !behavior || !countries || size.width === 0) return
+    const marked = countries.filter(c => statusOf(c))
+    let target = zoomIdentity
+    if (marked.length > 0) {
+      let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity]
+      for (const c of marked) {
+        const [[a, b], [cx, cy]] = shapes.bounds(c)
+        x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, cx); y1 = Math.max(y1, cy)
+      }
+      const k = Math.min(FIT_MAX_ZOOM, Math.max(1, 0.85 / Math.max((x1 - x0) / size.width, (y1 - y0) / size.height)))
+      target = zoomIdentity
+        .translate(size.width / 2 - k * (x0 + x1) / 2, size.height / 2 - k * (y0 + y1) / 2)
+        .scale(k)
+    }
+    const selection = select(canvas)
+    const from = transform.current
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      selection.call(behavior.transform, target)
+      return
+    }
+    cancelAnimationFrame(fitAnim.current)
+    const start = performance.now()
+    const step = (now: number) => {
+      const u = ease(Math.min(1, (now - start) / FIT_MS))
+      const k = from.k * Math.pow(target.k / from.k, u)
+      selection.call(behavior.transform, zoomIdentity
+        .translate(from.x + (target.x - from.x) * u, from.y + (target.y - from.y) * u).scale(k))
+      if (u < 1) fitAnim.current = requestAnimationFrame(step)
+    }
+    fitAnim.current = requestAnimationFrame(step)
+  }, [canvasRef, shapes, size])
+
+  // Fit once, when the view opens with data and a size.
+  const fitted = useRef(false)
+  const ready = options.countries !== null && size.width > 0
+  useEffect(() => {
+    if (!ready || fitted.current || !latest.current.fitOnOpen) return
+    fitted.current = true
+    fitMine()
+  }, [ready, fitMine])
+
+  useEffect(() => () => cancelAnimationFrame(fitAnim.current), [])
 
   const hitTest = useCallback((x: number, y: number) => {
     const cluster = clusterAt(clusters.current, x, y, CLUSTER_RADIUS)
@@ -123,5 +183,5 @@ export function useFlatMap(options: MapViewOptions) {
     if (canvas && behavior) select(canvas).call(behavior.scaleBy, 3, [hit.x, hit.y])
   }, [canvasRef, hitTest])
 
-  return { containerRef, canvasRef, handlers: { onPointerMove, onPointerLeave, onClick } }
+  return { containerRef, canvasRef, fitMine, handlers: { onPointerMove, onPointerLeave, onClick } }
 }
