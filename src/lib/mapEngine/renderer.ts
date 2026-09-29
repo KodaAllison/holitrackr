@@ -42,7 +42,7 @@ export class ShapeCache {
   /** Globe only: skips clipping, for countries wholly on the near side. */
   private readonly nearPath: GeoPath<void, GeoPermissibleObjects> | null
   private readonly shapes = new Map<IndexedCountry, Path2D>()
-  private readonly sizes = new Map<IndexedCountry, number>()
+  private readonly boxes = new Map<IndexedCountry, [[number, number], [number, number]]>()
   private readonly points = new Map<IndexedCountry, [number, number] | null>()
   private readonly groups = new WeakMap<IndexedCountry[], Path2D>()
 
@@ -78,15 +78,20 @@ export class ShapeCache {
     return group
   }
 
+  /** Projected bounds at zoom 1, in CSS px. */
+  bounds(c: IndexedCountry): [[number, number], [number, number]] {
+    let bounds = this.boxes.get(c)
+    if (!bounds) {
+      bounds = this.pathFor(c).bounds(c.feature)
+      this.boxes.set(c, bounds)
+    }
+    return bounds
+  }
+
   /** Largest projected dimension at zoom 1, in CSS px. */
   size(c: IndexedCountry): number {
-    let size = this.sizes.get(c)
-    if (size === undefined) {
-      const [[x0, y0], [x1, y1]] = this.pathFor(c).bounds(c.feature)
-      size = Math.max(x1 - x0, y1 - y0)
-      this.sizes.set(c, size)
-    }
-    return size
+    const [[x0, y0], [x1, y1]] = this.bounds(c)
+    return Math.max(x1 - x0, y1 - y0)
   }
 
   private pathFor(c: IndexedCountry): GeoPath<void, GeoPermissibleObjects> {

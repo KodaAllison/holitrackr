@@ -48,7 +48,7 @@ created_at    TIMESTAMPTZ
 
 ### Frontend (`src/`)
 - `App.tsx` — top-level state owner: session, visited countries array, toggle/remove/reset logic, localStorage migration
-- `src/components/WorldMap.tsx` — canvas world map: spinnable globe on desktop (`GlobeMapSurface`), flat Equal Earth below `lg` (`FlatMapSurface`); country clicks bubble up via callback
+- `src/components/WorldMap.tsx` — canvas world map: spinnable globe on desktop (`GlobeMapSurface`) with a Globe / Flat toggle that unrolls between them (`MorphMapSurface`, choice kept in localStorage); always flat below `lg` (`FlatMapSurface`); country clicks bubble up via callback
 - `src/lib/mapEngine/` — the map engine: country index + hit-testing, micro-state clustering, canvas renderer, `useFlatMap` (d3-zoom) and `useGlobeMap` (drag/inertia/idle spin, great-circle turns) hooks
 - `src/lib/worldAtlas.ts` — loads the compact country TopoJSON in `src/data/` (`motion` or `detail`); rebuild the data with `node scripts/build-world-atlas.mjs`
 - `src/components/Header.tsx` — navbar; accepts optional `user` prop to render `UserMenu`
