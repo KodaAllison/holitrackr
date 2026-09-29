@@ -23,7 +23,7 @@ interface WorldMapProps {
   onCountriesLoaded?: (countries: Country[]) => void
   onOpenJournal?: (code: string, name: string) => void
   /** Bring this country to the front (e.g. after picking it in search). */
-  focus?: { country: Country; seq: number } | null
+  focus?: { country: Country; seq: number; pulse?: boolean } | null
 }
 
 /** Desktop gets the globe (or flat, by choice); smaller screens are always flat. */

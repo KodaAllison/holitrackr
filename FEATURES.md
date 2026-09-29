@@ -111,7 +111,7 @@ Set personal goals and get notified when you hit them.
 - Progress bar per goal
 - In-app milestone notifications/badges on completion
 
-**Atlas v2 — milestone moments.** When a mark crosses a milestone (10, 25, 50
+**Atlas v2 — milestone moments** *(done)*. When a mark crosses a milestone (10, 25, 50
 or 100 countries, or the first country on a new continent), the globe turns to
 that country, a ring pulses, and a toast appears. Each milestone fires once and
 respects reduced motion. Comes after the globe map (#12).
