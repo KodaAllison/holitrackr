@@ -11,6 +11,25 @@ export function readMapView(): MapView {
   }
 }
 
+const INTRO_KEY = 'holitrackr:intro-played'
+
+/** Whether the startup intro has already played in this browser session. */
+export function introPlayed(): boolean {
+  try {
+    return window.sessionStorage.getItem(INTRO_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function markIntroPlayed(): void {
+  try {
+    window.sessionStorage.setItem(INTRO_KEY, '1')
+  } catch {
+    // Without storage the intro may replay on reload; harmless.
+  }
+}
+
 export function writeMapView(view: MapView): void {
   try {
     window.localStorage.setItem(KEY, view)
