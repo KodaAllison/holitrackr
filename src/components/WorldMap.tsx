@@ -12,6 +12,7 @@ import FlatMapSurface from './FlatMapSurface'
 import GlobeMapSurface from './GlobeMapSurface'
 import IntroMapSurface from './IntroMapSurface'
 import MapLegend from './MapLegend'
+import MapSummaryChip from './MapSummaryChip'
 import MapOverlays, { type Pointed } from './MapOverlays'
 import MapViewToggle, { type MapView } from './MapViewToggle'
 import MorphMapSurface from './MorphMapSurface'
@@ -39,6 +40,7 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
   const [hovered, setHovered] = useState<Pointed | null>(null)
   const [popup, setPopup] = useState<Pointed | null>(null)
   const [preferred, setPreferred] = useState<MapView>(readMapView)
+  const [legendOpen, setLegendOpen] = useState(false)
   const [morph, setMorph] = useState<{ to: MapView; globe: GlobeView; flat: ViewTransform } | null>(null)
   const globeView = useRef<GlobeView | null>(null)
   const flatView = useRef<ViewTransform | null>(null)
@@ -51,6 +53,7 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
     () => new Map(visitedCountries.map(v => [countryKey(v), v.status] as const)),
     [visitedCountries]
   )
+  const visitedCount = visitedCountries.filter(v => v.status === 'visited').length
   const statusOf = useCallback((c: IndexedCountry) => statusByKey.get(countryKey(c.identity)), [statusByKey])
 
   const options: MapViewOptions = {
@@ -134,7 +137,14 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
         </FlatMapSurface>
       )}
       {desktop && !showIntro && <MapViewToggle view={morph ? morph.to : preferred} disabled={morph !== null} onChange={switchView} />}
-      <MapLegend />
+      {!showIntro && (
+        <MapSummaryChip
+          visitedCount={visitedCount}
+          legendOpen={legendOpen}
+          onToggleLegend={() => setLegendOpen(open => !open)}
+        />
+      )}
+      <MapLegend visitedCount={visitedCount} open={legendOpen && !showIntro} />
     </div>
   )
 }

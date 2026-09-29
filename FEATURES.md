@@ -230,7 +230,7 @@ source pinned to a commit:
   animates the globe unrolling into the flat map and back. The choice is
   remembered per user (default Globe). Flat view has pan/zoom and opens on
   "fit my countries". Both views share selection, hover, tooltip and styling.
-- **Map chrome:**
+- **Map chrome** *(done: chip + legend toggle + tooltip)*:
   - Summary chip: "17 of 195 countries"; Show legend.
   - Palette: visited `#0B7A53`, bucket list amber hatch `#F2B24E`/`#C27A0A`,
     land `#F7F8F9`, ocean `#DCE6EE`, borders `#B4C0CC`, action blue
