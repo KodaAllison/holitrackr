@@ -7,6 +7,7 @@ import type { GeoJSON as LeafletGeoJSON } from 'leaflet'
 import type { Country, VisitedCountry } from '../types'
 import { findCountry } from '../lib/visitedCountries'
 import { featureIdentity, featureName } from '../lib/featureIdentity'
+import { loadWorld } from '../lib/worldAtlas'
 
 interface WorldMapProps {
   visitedCountries: VisitedCountry[]
@@ -27,30 +28,24 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
   }, [visitedCountries])
 
   useEffect(() => {
-    // Load GeoJSON data from a reliable source
-    fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
-      .then(response => response.json())
+    let cancelled = false
+    loadWorld('detail')
       .then(data => {
+        if (cancelled) return
         setGeoData(data)
-        
+
         // Extract country list for search
-        if (onCountriesLoaded && data.features) {
-          const countries = (data.features as Array<Feature<Geometry, GeoJsonProperties>>)
+        if (onCountriesLoaded) {
+          const countries = data.features
             .map(featureIdentity)
             .filter((c): c is Country => c !== null)
             .sort((a, b) => a.name.localeCompare(b.name))
-          
+
           onCountriesLoaded(countries)
         }
       })
-      .catch(error => {
-        console.error('Error loading GeoJSON:', error)
-        // Fallback to alternative source
-        fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json')
-          .then(response => response.json())
-          .then(data => setGeoData(data))
-          .catch(err => console.error('Fallback also failed:', err))
-      })
+      .catch(error => console.error('Error loading world atlas:', error))
+    return () => { cancelled = true }
   }, [onCountriesLoaded])
 
   const getCountryStyle = (feature?: Feature<Geometry, GeoJsonProperties>): PathOptions => {
