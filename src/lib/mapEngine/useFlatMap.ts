@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { geoEqualEarth } from 'd3-geo'
 import { select } from 'd3-selection'
 import { zoom as d3zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom'
@@ -6,10 +6,11 @@ import type { VisitedCountry } from '../../types'
 import { clusterAt, type Cluster } from './clusters'
 import { countryAt, type IndexedCountry } from './countryIndex'
 import { CLUSTER_RADIUS, createHatch, drawMap, ShapeCache, type ViewTransform } from './renderer'
+import { pointFrom, useCanvasSize } from './useCanvasSize'
 
 type Status = VisitedCountry['status']
 
-export interface FlatMapOptions {
+export interface MapViewOptions {
   countries: IndexedCountry[] | null
   statusOf: (country: IndexedCountry) => Status | undefined
   hoveredKey: string | null
@@ -25,13 +26,10 @@ const PAD = 4
 /**
  * The flat (Equal Earth) map on a canvas: sizing and devicePixelRatio,
  * d3-zoom pan/zoom, on-demand redraws (nothing runs while idle, so a hidden
- * tab costs nothing) and hit-testing. Attach `containerRef` to a sized
- * element and `canvasRef` to a canvas filling it.
+ * tab costs nothing) and hit-testing.
  */
-export function useFlatMap(options: FlatMapOptions) {
-  const containerRef = useRef<HTMLDivElement | null>(null)
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const [size, setSize] = useState({ width: 0, height: 0 })
+export function useFlatMap(options: MapViewOptions) {
+  const { containerRef, canvasRef, size } = useCanvasSize()
 
   const latest = useRef(options)
   const transform = useRef<ViewTransform>(zoomIdentity)
@@ -60,7 +58,7 @@ export function useFlatMap(options: FlatMapOptions) {
       countries, statusOf: opts.statusOf,
       hoveredKey: opts.hoveredKey, selectedKey: opts.selectedKey, hatch: hatch.current,
     })
-  }, [shapes, size])
+  }, [canvasRef, shapes, size])
 
   const requestDraw = useCallback(() => {
     if (!frame.current) frame.current = requestAnimationFrame(draw)
@@ -79,23 +77,8 @@ export function useFlatMap(options: FlatMapOptions) {
   }, [])
 
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const observer = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect
-      setSize({ width: Math.round(width), height: Math.round(height) })
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
-
-  useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || size.width === 0) return
-    const dpr = window.devicePixelRatio || 1
-    canvas.width = Math.round(size.width * dpr)
-    canvas.height = Math.round(size.height * dpr)
-
     const behavior = d3zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([1, MAX_ZOOM])
       .extent([[0, 0], [size.width, size.height]])
@@ -106,7 +89,7 @@ export function useFlatMap(options: FlatMapOptions) {
     selection.call(behavior).call(behavior.transform, zoomIdentity)
     zoomBehavior.current = behavior
     return () => { selection.on('.zoom', null) }
-  }, [size, requestDraw])
+  }, [canvasRef, size, requestDraw])
 
   const hitTest = useCallback((x: number, y: number) => {
     const cluster = clusterAt(clusters.current, x, y, CLUSTER_RADIUS)
@@ -116,11 +99,6 @@ export function useFlatMap(options: FlatMapOptions) {
     const lonLat = projection.invert?.([(x - t.x) / t.k, (y - t.y) / t.k])
     return countries && lonLat ? countryAt(countries, lonLat) : null
   }, [projection])
-
-  const pointFrom = (event: React.PointerEvent | React.MouseEvent) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    return [event.clientX - rect.left, event.clientY - rect.top] as const
-  }
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === 'touch' || event.buttons) return
@@ -143,7 +121,7 @@ export function useFlatMap(options: FlatMapOptions) {
     const canvas = canvasRef.current
     const behavior = zoomBehavior.current
     if (canvas && behavior) select(canvas).call(behavior.scaleBy, 3, [hit.x, hit.y])
-  }, [hitTest])
+  }, [canvasRef, hitTest])
 
   return { containerRef, canvasRef, handlers: { onPointerMove, onPointerLeave, onClick } }
 }

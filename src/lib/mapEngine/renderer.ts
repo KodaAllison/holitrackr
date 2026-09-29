@@ -1,4 +1,4 @@
-import { geoPath, type GeoPath, type GeoPermissibleObjects, type GeoProjection } from 'd3-geo'
+import { geoDistance, geoPath, type GeoPath, type GeoPermissibleObjects, type GeoProjection } from 'd3-geo'
 import type { VisitedCountry } from '../../types'
 import { countryKey } from '../visitedCountries'
 import { clusterDots, type Cluster, type Dot } from './clusters'
@@ -26,30 +26,42 @@ export interface RenderInput {
   hoveredKey: string | null
   selectedKey: string | null
   hatch: CanvasPattern | null
+  /** Draw a rim around the sphere (the globe view). */
+  rim?: boolean
 }
 
 /**
- * Projected shapes as Path2D, built once per projection (i.e. per resize).
- * Pan and zoom are a canvas transform on top, so frames never re-project
- * geometry; they only rasterise cached paths.
+ * Projected shapes as Path2D, built lazily and kept for the projection's
+ * lifetime. The flat map keeps one per resize (pan/zoom is a canvas
+ * transform on top, so frames only rasterise); the globe needs a new one per
+ * rotation, and `facing` then hides anchors on the far side.
  */
 export class ShapeCache {
   readonly sphere: Path2D
   private readonly path: GeoPath<void, GeoPermissibleObjects>
+  /** Globe only: skips clipping, for countries wholly on the near side. */
+  private readonly nearPath: GeoPath<void, GeoPermissibleObjects> | null
   private readonly shapes = new Map<IndexedCountry, Path2D>()
   private readonly sizes = new Map<IndexedCountry, number>()
   private readonly points = new Map<IndexedCountry, [number, number] | null>()
   private readonly groups = new WeakMap<IndexedCountry[], Path2D>()
 
-  constructor(readonly projection: GeoProjection) {
+  /**
+   * @param facing  globe only: the point facing the viewer.
+   * @param near    globe only: the same projection without horizon clipping.
+   */
+  constructor(readonly projection: GeoProjection, readonly facing?: [number, number], near?: GeoProjection) {
     this.path = geoPath(projection)
+    // Clipping tests every polygon against the horizon, which dominates a
+    // globe frame. Countries entirely in front don't need it.
+    this.nearPath = near ? geoPath(near) : null
     this.sphere = new Path2D(this.path({ type: 'Sphere' }) ?? '')
   }
 
   shape(c: IndexedCountry): Path2D {
     let shape = this.shapes.get(c)
     if (!shape) {
-      shape = new Path2D(this.path(c.feature) ?? '')
+      shape = new Path2D(this.pathFor(c)(c.feature) ?? '')
       this.shapes.set(c, shape)
     }
     return shape
@@ -70,16 +82,30 @@ export class ShapeCache {
   size(c: IndexedCountry): number {
     let size = this.sizes.get(c)
     if (size === undefined) {
-      const [[x0, y0], [x1, y1]] = this.path.bounds(c.feature)
+      const [[x0, y0], [x1, y1]] = this.pathFor(c).bounds(c.feature)
       size = Math.max(x1 - x0, y1 - y0)
       this.sizes.set(c, size)
     }
     return size
   }
 
+  private pathFor(c: IndexedCountry): GeoPath<void, GeoPermissibleObjects> {
+    const near = this.nearPath && this.facing
+      && geoDistance(c.anchor, this.facing) + c.reach < Math.PI / 2 - 0.01
+    return near && this.nearPath ? this.nearPath : this.path
+  }
+
+  /** False when the whole country is on the far side of the globe. */
+  visible(c: IndexedCountry): boolean {
+    return !this.facing || geoDistance(c.anchor, this.facing) - c.reach < Math.PI / 2
+  }
+
   /** The anchor projected at zoom 1, or null if it can't be projected. */
   anchor(c: IndexedCountry): [number, number] | null {
-    if (!this.points.has(c)) this.points.set(c, this.projection(c.anchor))
+    if (!this.points.has(c)) {
+      const hidden = this.facing && geoDistance(c.anchor, this.facing) > Math.PI / 2
+      this.points.set(c, hidden ? null : this.projection(c.anchor))
+    }
     return this.points.get(c) ?? null
   }
 }
@@ -149,11 +175,14 @@ function drawClusters(input: RenderInput, clusters: Cluster<IndexedCountry>[]) {
 }
 
 /**
- * Draws one frame of the flat map and returns the micro-state clusters in
+ * Draws one frame of the map and returns the micro-state clusters in
  * screen space, for hit-testing until the next frame.
  */
 export function drawMap(input: RenderInput): Cluster<IndexedCountry>[] {
   const { ctx, width, height, dpr, transform: t, shapes } = input
+  // The globe skips countries entirely on its far side.
+  const countries = shapes.facing ? input.countries.filter(c => shapes.visible(c)) : input.countries
+  input = { ...input, countries }
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, width, height)
@@ -176,6 +205,12 @@ export function drawMap(input: RenderInput): Cluster<IndexedCountry>[] {
   ctx.strokeStyle = MAP_COLORS.border
   ctx.lineWidth = 0.6 / t.k
   ctx.stroke(shapes.all(input.countries))
+
+  if (input.rim) {
+    ctx.strokeStyle = MAP_COLORS.border
+    ctx.lineWidth = 1 / t.k
+    ctx.stroke(shapes.sphere)
+  }
 
   outline(input, input.hoveredKey, MAP_COLORS.hover, 1.5)
   outline(input, input.selectedKey, MAP_COLORS.selected, 2)

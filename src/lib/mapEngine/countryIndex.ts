@@ -1,4 +1,4 @@
-import { geoArea, geoBounds, geoCentroid, geoContains } from 'd3-geo'
+import { geoArea, geoBounds, geoCentroid, geoContains, geoDistance } from 'd3-geo'
 import type { Feature, GeoJsonProperties, Geometry, Polygon } from 'geojson'
 import type { CountryIdentity } from '../visitedCountries'
 import type { WorldFeatures } from '../worldAtlas'
@@ -17,6 +17,8 @@ export interface IndexedCountry {
   anchor: [number, number]
   /** Spherical area in steradians. */
   area: number
+  /** Angular distance (radians) from the anchor to the country's furthest vertex. */
+  reach: number
 }
 
 /**
@@ -25,6 +27,16 @@ export interface IndexedCountry {
  * as dots instead of shapes.
  */
 export const MICRO_AREA = 1e-4
+
+function maxDistance(geometry: Geometry, from: [number, number]): number {
+  let max = 0
+  const visit = (ring: number[][]) => {
+    for (const p of ring) max = Math.max(max, geoDistance(from, [p[0], p[1]]))
+  }
+  if (geometry.type === 'Polygon') geometry.coordinates.forEach(visit)
+  else if (geometry.type === 'MultiPolygon') geometry.coordinates.forEach(poly => poly.forEach(visit))
+  return max
+}
 
 function largestPolygon(geometry: Geometry): Polygon | null {
   if (geometry.type === 'Polygon') return geometry
@@ -48,12 +60,14 @@ export function buildCountryIndex(world: WorldFeatures): IndexedCountry[] {
     const identity = featureIdentity(feature)
     if (!identity || !feature.geometry) continue
     const main = largestPolygon(feature.geometry)
+    const anchor = geoCentroid(main ?? feature)
     index.push({
       identity,
       feature,
       bounds: geoBounds(feature),
-      anchor: geoCentroid(main ?? feature),
+      anchor,
       area: geoArea(feature),
+      reach: maxDistance(feature.geometry, anchor),
     })
   }
   return index
