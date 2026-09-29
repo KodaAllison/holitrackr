@@ -8,6 +8,7 @@ import { sameCountry } from './visitedCountries'
 
 export interface CountryJournalUpdates {
   notes: string
+  place: string
   visitedAt: string
   rating: number | undefined
   tags: string[]
@@ -58,6 +59,7 @@ function parseCountryDto(value: unknown): VisitedCountryDto | undefined {
     typeof country.name !== 'string' ||
     (country.status !== 'visited' && country.status !== 'bucketlist') ||
     !isOptionalString(country.notes) ||
+    !isOptionalString(country.place) ||
     !isOptionalString(country.visitedAt) ||
     (country.rating !== undefined &&
       (typeof country.rating !== 'number' ||
@@ -76,6 +78,7 @@ function parseCountryDto(value: unknown): VisitedCountryDto | undefined {
     name: country.name,
     status: country.status,
     notes: country.notes,
+    place: country.place,
     visitedAt: country.visitedAt,
     rating: country.rating,
     tags: country.tags,
@@ -171,6 +174,7 @@ export function createHttpCountriesClient(
         code: country.code,
         name: country.name,
         notes: updates.notes,
+        place: updates.place.trim() || null,
         visitedAt: updates.visitedAt || null,
         rating: updates.rating ?? null,
         tags: updates.tags,
@@ -228,6 +232,7 @@ export function createInMemoryCountriesClient(
           ? {
               ...candidate,
               notes: updates.notes,
+              place: updates.place.trim() || undefined,
               visitedAt: updates.visitedAt || undefined,
               rating: updates.rating,
               tags: [...updates.tags],

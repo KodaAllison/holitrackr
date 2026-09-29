@@ -42,7 +42,11 @@ country_code  TEXT
 country_name  TEXT
 status        TEXT        ('visited' | 'bucketlist')
 notes         TEXT
-visit_date    DATE        (stored as YYYY-MM-01; API serialises as visitedAt: YYYY-MM)
+place         TEXT        (free text, max 120 chars, e.g. "Kyoto & Osaka")
+visit_date    DATE        (stored as YYYY-MM-01; API serialises as visitedAt: YYYY-MM;
+                           for bucket-list rows it means "Hoping to go")
+rating        INTEGER     (1-5 or NULL; CHECK constraint)
+tags          TEXT        (JSON array of strings; API serialises as tags: string[])
 created_at    TIMESTAMPTZ
 ```
 

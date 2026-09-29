@@ -33,6 +33,27 @@ export async function runDatabaseMigrations(): Promise<void> {
     ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS tags TEXT
   `)
   await database.query(`
+    ALTER TABLE visited_countries ADD COLUMN IF NOT EXISTS place TEXT
+  `)
+  // Ratings are 1-5 or null. NOT VALID: enforced for new writes without
+  // failing startup on any legacy row; the API has always clamped to 1-5.
+  await database.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'visited_countries_rating_check'
+          AND conrelid = 'visited_countries'::regclass
+      ) THEN
+        ALTER TABLE visited_countries
+          ADD CONSTRAINT visited_countries_rating_check
+          CHECK (rating IS NULL OR rating BETWEEN 1 AND 5) NOT VALID;
+      END IF;
+    END
+    $$
+  `)
+  await database.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS visited_countries_user_id_country_code_country_name_key
     ON visited_countries (user_id, country_code, country_name)
   `)

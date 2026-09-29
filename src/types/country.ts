@@ -14,6 +14,8 @@ export interface VisitedCountry {
   name: string
   status: 'visited' | 'bucketlist'
   notes?: string
+  /** Where in the country, free text (e.g. "Kyoto & Osaka"). */
+  place?: string
   visitedAt?: string
   rating?: number
   tags?: string[]
