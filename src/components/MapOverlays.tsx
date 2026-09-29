@@ -35,13 +35,20 @@ export default function MapOverlays({
       )}
       {hovered && !popup && (
         <div
-          className="absolute z-10 pointer-events-none rounded-md bg-gray-900/90 text-white text-xs font-medium px-2 py-1 whitespace-nowrap"
-          style={{ left: hovered.x + 12, top: hovered.y + 12 }}
+          className="absolute z-20 pointer-events-none rounded-lg bg-white shadow-lg border border-gray-200 px-3 py-2 whitespace-nowrap"
+          style={{ left: hovered.x + 14, top: hovered.y + 14 }}
         >
-          {hovered.country.name}
-          {hoveredStatus && (
-            <span className="ml-1 text-gray-300">· {hoveredStatus === 'visited' ? 'Visited' : 'Bucket list'}</span>
-          )}
+          <p className="text-sm font-semibold text-gray-900">{hovered.country.name}</p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                hoveredStatus === 'visited' ? 'bg-[#0B7A53]'
+                  : hoveredStatus === 'bucketlist' ? 'bg-[#F2B24E] ring-1 ring-[#9A5B00]'
+                  : 'bg-[#F7F8F9] ring-1 ring-[#B4C0CC]'
+              }`}
+            />
+            {hoveredStatus === 'visited' ? 'Visited' : hoveredStatus === 'bucketlist' ? 'On your bucket list' : 'Not visited yet · click to mark'}
+          </p>
         </div>
       )}
       {popup && (
