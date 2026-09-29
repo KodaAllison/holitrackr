@@ -59,7 +59,7 @@ created_at    TIMESTAMPTZ
 - `src/components/SignInScreen.tsx` — signed-out "atlas plate": dark globe touring a demo journey (`src/lib/signInTour.ts`, drawn by `mapEngine/drawSignIn.ts`) and Continue with Google. Uses self-hosted Instrument Serif + JetBrains Mono (`@fontsource`), a deliberate exception to the palette/fonts rule scoped to this screen
 - `src/components/Header.tsx` — navbar; accepts optional `user` prop to render `UserMenu`
 - `src/components/Stats.tsx` — visited/bucket-list counts bar
-- `src/components/VisitedCountriesList.tsx` — sidebar list with remove, reset, journal edit
+- `src/components/CountrySidebar.tsx` — sidebar: `CountryList` (Visited / Bucket list tabs, continent groups, `StatusPill` per row, arrow-key navigation) or `CountryDetailPanel` (inline autosaving `JournalFields`, remove with an `UndoToast`); a bottom sheet below `lg`. Selecting a country turns the map to it
 - `src/lib/auth.ts` — Better-Auth server config (DB adapter, Google provider)
 - `src/lib/auth-client.ts` — Better-Auth browser client
 - `src/types/` — shared `Country` and `VisitedCountry` TypeScript interfaces
