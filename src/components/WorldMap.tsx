@@ -6,10 +6,11 @@ import { useWorldCountries } from '../lib/mapEngine/useWorldCountries'
 import type { ViewTransform } from '../lib/mapEngine/renderer'
 import type { MapViewOptions } from '../lib/mapEngine/useFlatMap'
 import { DEFAULT_GLOBE, type GlobeView } from '../lib/mapEngine/views'
-import { readMapView, writeMapView } from '../lib/mapViewPreference'
+import { introPlayed, markIntroPlayed, readMapView, writeMapView } from '../lib/mapViewPreference'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import FlatMapSurface from './FlatMapSurface'
 import GlobeMapSurface from './GlobeMapSurface'
+import IntroMapSurface from './IntroMapSurface'
 import MapLegend from './MapLegend'
 import MapOverlays, { type Pointed } from './MapOverlays'
 import MapViewToggle, { type MapView } from './MapViewToggle'
@@ -42,6 +43,9 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
   const globeView = useRef<GlobeView | null>(null)
   const flatView = useRef<ViewTransform | null>(null)
   const savedGlobe = useRef<GlobeView | undefined>(undefined)
+  // Once per session, desktop only, and never with reduced motion.
+  const [intro, setIntro] = useState(() => !introPlayed())
+  const showIntro = intro && desktop && !reducedMotion
 
   const statusByKey = useMemo(
     () => new Map(visitedCountries.map(v => [countryKey(v), v.status] as const)),
@@ -73,6 +77,13 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
     }
   }
 
+  const finishIntro = () => {
+    markIntroPlayed()
+    setIntro(false)
+    // A saved Flat preference finishes the intro with the unroll.
+    if (preferred === 'flat') setMorph({ to: 'flat', globe: DEFAULT_GLOBE, flat: IDENTITY })
+  }
+
   const view: MapView = desktop ? preferred : 'flat'
   const overlays = (
     <MapOverlays
@@ -90,7 +101,14 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
 
   return (
     <div ref={cardRef} className="relative bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
-      {morph && (motionCountries ?? countries) ? (
+      {showIntro ? (
+        <IntroMapSurface
+          countries={motionCountries ?? countries}
+          statusOf={statusOf}
+          onDone={finishIntro}
+          className={`${SURFACE} h-[420px]`}
+        />
+      ) : morph && (motionCountries ?? countries) ? (
         <MorphMapSurface
           direction={morph.to === 'flat' ? 'toFlat' : 'toGlobe'}
           globe={morph.globe}
@@ -115,7 +133,7 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
           {overlays}
         </FlatMapSurface>
       )}
-      {desktop && <MapViewToggle view={morph ? morph.to : preferred} disabled={morph !== null} onChange={switchView} />}
+      {desktop && !showIntro && <MapViewToggle view={morph ? morph.to : preferred} disabled={morph !== null} onChange={switchView} />}
       <MapLegend />
     </div>
   )

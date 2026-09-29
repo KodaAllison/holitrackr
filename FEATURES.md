@@ -247,7 +247,7 @@ source pinned to a commit:
 ---
 
 ## 13. Startup globe intro
-**Status:** Planned (Atlas v2)
+**Status:** Done (Atlas v2)
 
 Replaces the "Loading map..." state.
 - A dark globe spins in, and countries light up as the data arrives (visited
