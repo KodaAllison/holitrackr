@@ -8,7 +8,7 @@ import CountrySearch from './components/CountrySearch'
 import VisitedCountriesList from './components/VisitedCountriesList.tsx'
 import TripTimeline from './components/TripTimeline'
 import CountryDetailModal from './components/CountryDetailModal'
-import AuthForm from './components/AuthForm'
+import SignInScreen from './components/SignInScreen'
 import { useSession } from './lib/auth-client'
 import {
   httpCountriesClient,
@@ -245,22 +245,9 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     )
   }
 
-  // Show auth form if not logged in
+  // Signed out: the atlas-plate sign-in screen
   if (!session) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        <Header />
-        <div className="flex-1 flex items-center justify-center px-4 py-8">
-          {sessionCheckTimedOut && (
-            <div className="w-full max-w-md mb-4 p-3 bg-amber-100 border border-amber-300 text-amber-800 rounded">
-              Session check timed out. The auth server may be unavailable.
-            </div>
-          )}
-          <AuthForm />
-        </div>
-        <Footer />
-      </div>
-    )
+    return <SignInScreen timedOut={sessionCheckTimedOut} />
   }
 
   // Show main app if logged in

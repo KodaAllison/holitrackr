@@ -260,7 +260,7 @@ Replaces the "Loading map..." state.
 ---
 
 ## 14. Atlas-plate sign-in
-**Status:** Planned (Atlas v2)
+**Status:** Done (Atlas v2)
 
 The signed-out first load.
 - A centred globe inside a rotating instrument bezel.
