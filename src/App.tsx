@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import type { Country, VisitedCountry } from './types'
 import WorldMap from './components/WorldMap'
 import Header from './components/Header'
 import Footer from './components/Footer'
 import Stats from './components/Stats'
 import CountrySearch from './components/CountrySearch'
-import VisitedCountriesList from './components/VisitedCountriesList.tsx'
+import CountrySidebar from './components/CountrySidebar'
+import UndoToast from './components/UndoToast'
+import { journalValuesOf } from './lib/journal'
 import TripTimeline from './components/TripTimeline'
 import CountryDetailModal from './components/CountryDetailModal'
 import SignInScreen from './components/SignInScreen'
@@ -90,6 +92,17 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   const [activeView, setActiveView] = useState<'map' | 'timeline'>('map')
   const [journalCountry, setJournalCountry] = useState<VisitedCountry | null>(null)
   const [mapFocus, setMapFocus] = useState<{ country: Country; seq: number } | null>(null)
+  const [selected, setSelected] = useState<Country | null>(null)
+  const [removed, setRemoved] = useState<VisitedCountry | null>(null)
+  // Derived: the selection disappears if the country is removed.
+  const selectedCountry = selected ? findCountry(visitedCountries, selected) ?? null : null
+
+  const dismissUndo = useCallback(() => setRemoved(null), [])
+  const focusMap = (country: Country) => setMapFocus(prev => ({ country, seq: (prev?.seq ?? 0) + 1 }))
+  const selectCountry = (country: Country) => {
+    setSelected(country)
+    focusMap(country)
+  }
 
   const refreshCountries = async () => {
     try {
@@ -120,9 +133,10 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     }
   }
 
+  // From the map popup: open the country's detail panel.
   const openJournal = (code: string, name: string) => {
     const country = findCountry(visitedCountries, { code, name })
-    if (country) setJournalCountry(country)
+    if (country) setSelected(country)
   }
 
   // Load visited countries when user session is available
@@ -201,11 +215,27 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   }
 
   const removeCountry = (country: VisitedCountry) => {
+    setRemoved(country)
     setVisitedCountries(prev => prev.filter(v => !sameCountry(v, country)))
     void countriesClient.remove(country).catch(async (err) => {
       console.warn('Failed to remove country:', err)
       await refreshCountries()
     })
+  }
+
+  // Undo a removal: put the row back, then restore it (and its journal) on the server.
+  const undoRemove = async () => {
+    const country = removed
+    if (!country) return
+    setRemoved(null)
+    setVisitedCountries(prev => (findCountry(prev, country) ? prev : [...prev, country]))
+    try {
+      await countriesClient.add({ code: country.code, name: country.name, status: country.status, notes: country.notes })
+      await countriesClient.updateJournal(country, journalValuesOf(country))
+    } catch (err) {
+      console.warn('Failed to undo removal:', err)
+      await refreshCountries()
+    }
   }
 
   const resetVisitedCountries = async () => {
@@ -260,6 +290,9 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
           onClose={() => setJournalCountry(null)}
         />
       )}
+      {removed && (
+        <UndoToast message={`Removed ${removed.name}`} onUndo={() => { void undoRemove() }} onDismiss={dismissUndo} />
+      )}
       <Header user={{ name: session.user.name, email: session.user.email }} />
 
       <Stats
@@ -300,7 +333,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
             visitedCountries={visitedCountries}
             onCountrySelect={(country, status) => {
               toggleCountry(country, status)
-              setMapFocus(prev => ({ country, seq: (prev?.seq ?? 0) + 1 }))
+              focusMap(country)
             }}
           />
         )}
@@ -318,12 +351,16 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
                 focus={mapFocus}
               />
             </div>
-            <div className="h-[420px] max-h-[420px] mb-4">
-              <VisitedCountriesList
+            <div className="mb-4">
+              <CountrySidebar
                 visitedCountries={visitedCountries}
+                selected={selectedCountry}
+                onSelect={selectCountry}
+                onBack={() => setSelected(null)}
+                onSetStatus={(country, status) => toggleCountry(country, status)}
+                onSaveJournal={(country, values) => { void updateCountryJournal(country, values) }}
                 onRemove={removeCountry}
                 onReset={resetVisitedCountries}
-                onEditJournal={setJournalCountry}
               />
             </div>
           </div>

@@ -161,7 +161,7 @@ Land it on `atlas-v2` only. The detail panel gets "Add another visit".
 ---
 
 ## 9. In-List Status Toggle
-**Status:** Idea
+**Status:** Done on `atlas-v2` (status pill on each list row and in the detail panel)
 
 Allow users to switch a country between "visited" and "bucket list" directly from the country list sidebar, without having to re-click it on the map or use the search bar.
 
@@ -236,7 +236,7 @@ source pinned to a commit:
     land `#F7F8F9`, ocean `#DCE6EE`, borders `#B4C0CC`, action blue
     `#2563EB`. This is a deliberate extension of the blue-600 / gray-50
     palette for the map only.
-- **List + detail panel:**
+- **List + detail panel** *(done)*:
   - Grouped visited / bucket list, with an inline status pill (covers #9) and
     keyboard navigation.
   - Inline journal with autosave and an Undo toast.

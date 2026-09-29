@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import type { VisitedCountry } from '../types'
 import type { CountryJournalUpdates } from '../lib/countriesClient'
-
-const PRESET_TAGS = ['Food', 'Culture', 'Nature', 'Adventure', 'Work', 'Beach', 'City', 'Wildlife', 'History']
+import JournalFields from './JournalFields'
+import { journalValuesOf } from '../lib/journal'
 
 interface CountryDetailModalProps {
   country: VisitedCountry
@@ -10,44 +10,9 @@ interface CountryDetailModalProps {
   onClose: () => void
 }
 
-function StarRating({ value, onChange }: { value: number | undefined; onChange: (r: number | undefined) => void }) {
-  const [hovered, setHovered] = useState<number | null>(null)
-
-  return (
-    <div className="flex gap-1" onMouseLeave={() => setHovered(null)}>
-      {[1, 2, 3, 4, 5].map((star) => {
-        const active = hovered !== null ? star <= hovered : star <= (value ?? 0)
-        return (
-          <button
-            key={star}
-            type="button"
-            onMouseEnter={() => setHovered(star)}
-            onClick={() => onChange(value === star ? undefined : star)}
-            className={`text-2xl transition-colors leading-none ${active ? 'text-amber-400' : 'text-gray-200'} hover:text-amber-400`}
-            aria-label={`${star} star`}
-          >
-            ★
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
 export default function CountryDetailModal({ country, onSave, onClose }: CountryDetailModalProps) {
-  const [notes, setNotes] = useState(country.notes ?? '')
-  const [place, setPlace] = useState(country.place ?? '')
-  const [visitedAt, setVisitedAt] = useState(country.visitedAt ?? '')
-  const [rating, setRating] = useState<number | undefined>(country.rating)
-  const [tags, setTags] = useState<string[]>(country.tags ?? [])
-
-  const toggleTag = (tag: string) => {
-    setTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])
-  }
-
-  const handleSave = () => {
-    onSave({ notes, place, visitedAt, rating, tags })
-  }
+  const [values, setValues] = useState(() => journalValuesOf(country))
+  const handleSave = () => onSave(values)
 
   return (
     <div
@@ -80,77 +45,7 @@ export default function CountryDetailModal({ country, onSave, onClose }: Country
           </button>
         </div>
 
-        {/* Visit date; for the bucket list the same field is "Hoping to go" */}
-        <div>
-          <label htmlFor="journal-when" className="text-sm text-gray-500 mb-1 block">
-            {country.status === 'visited' ? 'When did you visit?' : 'Hoping to go'}
-          </label>
-          <input
-            id="journal-when"
-            type="month"
-            value={visitedAt}
-            onChange={e => setVisitedAt(e.target.value)}
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-        </div>
-
-        {/* Place */}
-        <div>
-          <label htmlFor="journal-place" className="text-sm text-gray-500 mb-1 block">
-            {country.status === 'visited' ? 'Where?' : 'Where to?'}
-          </label>
-          <input
-            id="journal-place"
-            type="text"
-            value={place}
-            maxLength={120}
-            onChange={e => setPlace(e.target.value)}
-            placeholder="e.g. Kyoto & Osaka"
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-        </div>
-
-        {/* Star Rating — visited only */}
-        {country.status === 'visited' && (
-          <div>
-            <label className="text-sm text-gray-500 mb-1.5 block">Rating</label>
-            <StarRating value={rating} onChange={setRating} />
-          </div>
-        )}
-
-        {/* Tags */}
-        <div>
-          <label className="text-sm text-gray-500 mb-2 block">Tags</label>
-          <div className="flex flex-wrap gap-1.5">
-            {PRESET_TAGS.map(tag => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => toggleTag(tag)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                  tags.includes(tag)
-                    ? 'bg-blue-500 text-white border-blue-500'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-500'
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Notes */}
-        <div>
-          <label className="text-sm text-gray-500 mb-1 block">Notes</label>
-          <textarea
-            autoFocus
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="e.g. Hiked the Inca Trail…"
-            rows={4}
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-        </div>
+        <JournalFields status={country.status} values={values} onChange={setValues} idPrefix="journal" autoFocusNotes />
 
         {/* Actions */}
         <div className="flex gap-2 pt-1">
