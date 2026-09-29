@@ -14,6 +14,15 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined
 }
 
+/** Longest place text we store; longer input is cut, not rejected. */
+export const MAX_PLACE_LENGTH = 120
+
+function parsePlace(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const place = value.trim().slice(0, MAX_PLACE_LENGTH)
+  return place === '' ? null : place
+}
+
 export function parseCountryIdentity(value: unknown): CountryIdentity | undefined {
   const body = asRecord(value)
   if (!body || typeof body.code !== 'string' || typeof body.name !== 'string') return undefined
@@ -48,6 +57,7 @@ export function parseUpdateCountryInput(value: unknown): UpdateCountryInput | un
   return {
     ...identity,
     notes: typeof body.notes === 'string' ? body.notes : null,
+    place: parsePlace(body.place),
     visitDate: toStoredVisitDate(body.visitedAt),
     rating: typeof body.rating === 'number' && body.rating >= 1 && body.rating <= 5
       ? Math.round(body.rating)
@@ -83,6 +93,7 @@ export function serializeStoredCountry(
     name: row.country_name,
     status: parseStoredStatus(row.status),
     notes: row.notes ?? undefined,
+    place: row.place ?? undefined,
     visitedAt: fromStoredVisitDate(row.visit_date),
     rating: row.rating ?? undefined,
     tags: parseStoredTags(row.tags),

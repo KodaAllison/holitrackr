@@ -10,7 +10,7 @@ describe('public stats HTTP contract', () => {
         { country_code: 'ESP', country_name: 'Madrid, 2026-09', notes: 'private', user_id: 'owner' },
         { country_code: '-99', country_name: 'France', visit_date: '2026-05-01' },
         { country_code: '-99', country_name: 'Norway', rating: 5 },
-        { country_code: '-99', country_name: 'Kosovo', tags: '["private"]' },
+        { country_code: '-99', country_name: 'Kosovo', tags: '["private"]', place: 'Pristina' },
         { country_code: 'ESP', country_name: 'Spain' },
         { country_code: '-99', country_name: 'Northern Cyprus' },
         { country_code: '-99', country_name: 'Somaliland' },
@@ -39,7 +39,7 @@ describe('public stats HTTP contract', () => {
       continents: ['Europe'],
       generatedAt: '2026-09-01T12:00:00.000Z',
     })
-    expect(JSON.stringify(response.body)).not.toMatch(/notes|visit_date|rating|tags|user_id/)
+    expect(JSON.stringify(response.body)).not.toMatch(/notes|visit_date|rating|tags|place|Pristina|user_id/)
   })
 
   it('queries only public columns for the configured owner', async () => {

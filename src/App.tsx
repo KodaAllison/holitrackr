@@ -104,11 +104,11 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     country: VisitedCountry,
     updates: CountryJournalUpdates
   ): Promise<void> => {
-    const { notes, visitedAt, rating, tags } = updates
+    const { notes, place, visitedAt, rating, tags } = updates
     setVisitedCountries(prev =>
       prev.map(v =>
         sameCountry(v, country)
-          ? { ...v, notes, visitedAt: visitedAt || undefined, rating, tags }
+          ? { ...v, notes, place: place.trim() || undefined, visitedAt: visitedAt || undefined, rating, tags }
           : v
       )
     )

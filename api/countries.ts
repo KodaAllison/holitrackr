@@ -107,7 +107,7 @@ export default async function handler(
 
     if (method === 'GET') {
       const { rows } = await pool.query<StoredCountryRow>(
-        `SELECT country_code, country_name, status, notes, visit_date, rating, tags
+        `SELECT country_code, country_name, status, notes, place, visit_date, rating, tags
          FROM visited_countries
          WHERE user_id = $1
          ORDER BY visit_date DESC NULLS LAST, created_at DESC`,
@@ -156,9 +156,9 @@ export default async function handler(
       }
 
       await pool.query(
-        `UPDATE visited_countries SET notes = $1, visit_date = $2, rating = $3, tags = $4
-         WHERE user_id = $5 AND country_code = $6 AND country_name = $7`,
-        [input.notes, input.visitDate, input.rating, input.tags, userId, input.code, input.name]
+        `UPDATE visited_countries SET notes = $1, place = $2, visit_date = $3, rating = $4, tags = $5
+         WHERE user_id = $6 AND country_code = $7 AND country_name = $8`,
+        [input.notes, input.place, input.visitDate, input.rating, input.tags, userId, input.code, input.name]
       );
 
       res.statusCode = 204;

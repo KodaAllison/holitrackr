@@ -87,6 +87,7 @@ describe('HTTP countries client', () => {
     await client.remove(spain)
     await client.updateJournal(spain, {
       notes: 'Summer',
+      place: '  ',
       visitedAt: '',
       rating: undefined,
       tags: ['food'],
@@ -114,6 +115,7 @@ describe('HTTP countries client', () => {
           code: 'ESP',
           name: 'Spain',
           notes: 'Summer',
+          place: null,
           visitedAt: null,
           rating: null,
           tags: ['food'],
@@ -164,6 +166,7 @@ describe('in-memory countries client', () => {
     await client.add({ code: 'JPN', name: 'Japan', status: 'bucketlist' })
     await client.updateJournal({ code: 'JPN', name: 'Japan' }, {
       notes: 'Spring',
+      place: ' Kyoto & Osaka ',
       visitedAt: '2027-04',
       rating: 4,
       tags: ['food'],
@@ -176,6 +179,7 @@ describe('in-memory countries client', () => {
         name: 'Japan',
         status: 'bucketlist',
         notes: 'Spring',
+        place: 'Kyoto & Osaka',
         visitedAt: '2027-04',
         rating: 4,
         tags: ['food'],

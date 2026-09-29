@@ -5,6 +5,7 @@ export interface StoredCountryRow {
   country_name: string
   status: string
   notes: string | null
+  place: string | null
   visit_date: string | null
   rating: number | null
   tags: string | null
@@ -27,6 +28,7 @@ export interface CreateCountryInput extends CountryIdentity {
 
 export interface UpdateCountryInput extends CountryIdentity {
   notes: string | null
+  place: string | null
   visitDate: string | null
   rating: number | null
   tags: string | null

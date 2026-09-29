@@ -53,7 +53,7 @@ Click a visited country to open a rich side panel.
 - Full journal entry (rich text or markdown)
 - Builds on the existing `notes` column — would likely need a separate `country_details` table
 
-**Atlas v2 update — journal fields.** `rating` and `tags` columns already
+**Atlas v2 update — journal fields.** *(Done: `place` added; the rating CHECK is on; bucket-list rows use the date as "Hoping to go". The inline autosave panel comes with the list/detail redesign.)* `rating` and `tags` columns already
 exist on `visited_countries`. Atlas v2 adds `place` (free text, e.g.
 "Kyoto & Osaka") and tightens the other two: rating 1–5 or null, tags as a
 list. The detail panel edits them inline with autosave. The bucket-list
