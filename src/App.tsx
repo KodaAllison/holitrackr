@@ -89,6 +89,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   const [sessionCheckTimedOut, setSessionCheckTimedOut] = useState(false)
   const [activeView, setActiveView] = useState<'map' | 'timeline'>('map')
   const [journalCountry, setJournalCountry] = useState<VisitedCountry | null>(null)
+  const [mapFocus, setMapFocus] = useState<{ country: Country; seq: number } | null>(null)
 
   const refreshCountries = async () => {
     try {
@@ -310,7 +311,10 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
           <CountrySearch
             countries={countries}
             visitedCountries={visitedCountries}
-            onCountrySelect={toggleCountry}
+            onCountrySelect={(country, status) => {
+              toggleCountry(country, status)
+              setMapFocus(prev => ({ country, seq: (prev?.seq ?? 0) + 1 }))
+            }}
           />
         )}
       </div>
@@ -324,6 +328,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
                 onCountryAction={(code, name, status) => toggleCountry({ code, name }, status)}
                 onCountriesLoaded={setCountries}
                 onOpenJournal={openJournal}
+                focus={mapFocus}
               />
             </div>
             <div className="h-[420px] max-h-[420px] mb-4">

@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Country, VisitedCountry } from '../types'
 import { countryKey } from '../lib/visitedCountries'
 import { loadWorld } from '../lib/worldAtlas'
 import { buildCountryIndex, type IndexedCountry } from '../lib/mapEngine/countryIndex'
-import { useFlatMap } from '../lib/mapEngine/useFlatMap'
+import { useMediaQuery } from '../lib/useMediaQuery'
+import type { MapViewOptions } from '../lib/mapEngine/useFlatMap'
+import FlatMapSurface from './FlatMapSurface'
+import GlobeMapSurface from './GlobeMapSurface'
 import MapLegend from './MapLegend'
 import MapPopup from './MapPopup'
 
@@ -12,6 +15,8 @@ interface WorldMapProps {
   onCountryAction: (code: string, name: string, status: 'visited' | 'bucketlist') => void
   onCountriesLoaded?: (countries: Country[]) => void
   onOpenJournal?: (code: string, name: string) => void
+  /** Bring this country to the front (e.g. after picking it in search). */
+  focus?: { country: Country; seq: number } | null
 }
 
 interface Pointed {
@@ -20,14 +25,23 @@ interface Pointed {
   y: number
 }
 
-export default function WorldMap({ visitedCountries, onCountryAction, onCountriesLoaded, onOpenJournal }: WorldMapProps) {
+/** Desktop gets the spinnable globe; smaller screens get the flat map. */
+const GLOBE_QUERY = '(min-width: 1024px)'
+
+export default function WorldMap({ visitedCountries, onCountryAction, onCountriesLoaded, onOpenJournal, focus }: WorldMapProps) {
+  const globe = useMediaQuery(GLOBE_QUERY)
+  const cardRef = useRef<HTMLDivElement | null>(null)
   const [countries, setCountries] = useState<IndexedCountry[] | null>(null)
+  const [motionCountries, setMotionCountries] = useState<IndexedCountry[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [hovered, setHovered] = useState<Pointed | null>(null)
   const [popup, setPopup] = useState<Pointed | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    loadWorld('motion')
+      .then(world => { if (!cancelled) setMotionCountries(buildCountryIndex(world)) })
+      .catch(error => console.error('Error loading world atlas (motion):', error))
     loadWorld('detail')
       .then(world => {
         if (cancelled) return
@@ -48,7 +62,7 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
   )
   const statusOf = useCallback((c: IndexedCountry) => statusByKey.get(countryKey(c.identity)), [statusByKey])
 
-  const { containerRef, canvasRef, handlers } = useFlatMap({
+  const options: MapViewOptions = {
     countries,
     statusOf,
     hoveredKey: hovered ? countryKey(hovered.country) : null,
@@ -56,21 +70,14 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
     onHover: (c, x, y) => setHovered(c ? { country: c.identity, x, y } : null),
     onPick: (c, x, y) => { setHovered(null); setPopup({ country: c.identity, x, y }) },
     onMoveStart: () => setPopup(null),
-  })
+  }
 
   const closePopup = useCallback(() => setPopup(null), [])
   const hoveredStatus = hovered && statusByKey.get(countryKey(hovered.country))
 
-  return (
-    <div className="relative bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
-      <div ref={containerRef} className="relative aspect-[2/1] sm:aspect-auto sm:h-[420px] w-full select-none">
-        <canvas
-          ref={canvasRef}
-          aria-hidden="true"
-          className="absolute inset-0 w-full h-full touch-none"
-          {...handlers}
-        />
-        {!countries && (
+  const overlays = (
+    <>
+        {!countries && !motionCountries && (
           <div className="absolute inset-0 flex items-center justify-center text-gray-600">
             {failed ? 'The map could not be loaded.' : 'Loading map...'}
           </div>
@@ -92,13 +99,29 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
             status={statusByKey.get(countryKey(popup.country))}
             x={popup.x}
             y={popup.y}
-            containerWidth={containerRef.current?.clientWidth ?? 0}
+            containerWidth={cardRef.current?.clientWidth ?? 0}
             onAction={status => { onCountryAction(popup.country.code, popup.country.name, status); closePopup() }}
             onOpenJournal={onOpenJournal && (() => { onOpenJournal(popup.country.code, popup.country.name); closePopup() })}
             onClose={closePopup}
           />
         )}
-      </div>
+    </>
+  )
+
+  return (
+    <div ref={cardRef} className="relative bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
+      {globe ? (
+        <GlobeMapSurface
+          options={{ ...options, motionCountries, focus }}
+          className="relative h-[420px] w-full select-none bg-gradient-to-b from-white to-gray-50"
+        >
+          {overlays}
+        </GlobeMapSurface>
+      ) : (
+        <FlatMapSurface options={options} className="relative aspect-[2/1] sm:aspect-auto sm:h-[420px] w-full select-none">
+          {overlays}
+        </FlatMapSurface>
+      )}
       <MapLegend />
     </div>
   )

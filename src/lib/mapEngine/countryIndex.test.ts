@@ -34,6 +34,15 @@ describe('buildCountryIndex', () => {
   })
 })
 
+describe('reach', () => {
+  it('covers every part of the country from its anchor', () => {
+    const france = byName('France')! // test data
+    // French Guiana is ~7,000 km from Paris: far more than metropolitan France.
+    expect(france.reach).toBeGreaterThan(1)
+    expect(byName('Malta')!.reach).toBeLessThan(0.01) // test data
+  })
+})
+
 describe('countryAt', () => {
   it('finds the country under a point', () => {
     expect(countryAt(index, [2.35, 48.86])?.identity).toEqual({ code: '-99', name: 'France' })
