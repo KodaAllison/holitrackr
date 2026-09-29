@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, atlas-v2]
   push:
-    branches: [main]
+    branches: [main, atlas-v2]
 
 permissions:
   contents: read
@@ -27,3 +27,6 @@ jobs:
 
       - name: Typecheck
         run: npx tsc -b
+
+      - name: Test
+        run: npm test

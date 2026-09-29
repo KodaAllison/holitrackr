@@ -49,6 +49,7 @@ created_at    TIMESTAMPTZ
 ### Frontend (`src/`)
 - `App.tsx` — top-level state owner: session, visited countries array, toggle/remove/reset logic, localStorage migration
 - `src/components/WorldMap.tsx` — Leaflet map; country clicks bubble up via callback
+- `src/lib/worldAtlas.ts` — loads the compact country TopoJSON in `src/data/` (`motion` or `detail`); rebuild the data with `node scripts/build-world-atlas.mjs`
 - `src/components/Header.tsx` — navbar; accepts optional `user` prop to render `UserMenu`
 - `src/components/Stats.tsx` — visited/bucket-list counts bar
 - `src/components/VisitedCountriesList.tsx` — sidebar list with remove, reset, journal edit
@@ -95,6 +96,22 @@ created_at    TIMESTAMPTZ
 - `fix/<short-name>` — bug fix branches
 - Squash-merge PRs to keep main history clean
 - PR description should reference the feature from `FEATURES.md` and include a brief test plan
+
+### Atlas v2 trunk
+
+The Atlas v2 redesign (FEATURES.md, "Atlas v2 redesign") is too big to land on
+`main` piecemeal, so it has its own long-lived trunk:
+
+- `atlas-v2` — branched from `main`. Every redesign ticket branches
+  `feat/<name>` off `atlas-v2` and PRs back into `atlas-v2`, never `main`.
+- Merge `main` into `atlas-v2` regularly (a merge commit, not a rebase) so
+  fixes on `main` reach the redesign and conflicts stay small.
+- `atlas-v2` → `main` only when a milestone is releasable, via one PR with a
+  test plan covering the whole milestone.
+- Vercel builds a preview deployment for every pushed branch, so `atlas-v2`
+  and its PRs each get a preview URL. Check the redesign there, not on
+  production.
+- Non-redesign fixes still go `fix/<name>` → `main`.
 
 ## Adding a New API Endpoint
 
