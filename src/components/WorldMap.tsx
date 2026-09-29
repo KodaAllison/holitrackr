@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { Country, VisitedCountry } from '../types'
 import { countryKey } from '../lib/visitedCountries'
-import { loadWorld } from '../lib/worldAtlas'
-import { buildCountryIndex, type IndexedCountry } from '../lib/mapEngine/countryIndex'
+import type { IndexedCountry } from '../lib/mapEngine/countryIndex'
+import { useWorldCountries } from '../lib/mapEngine/useWorldCountries'
 import type { ViewTransform } from '../lib/mapEngine/renderer'
 import type { MapViewOptions } from '../lib/mapEngine/useFlatMap'
 import { DEFAULT_GLOBE, type GlobeView } from '../lib/mapEngine/views'
@@ -34,9 +34,7 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
   const desktop = useMediaQuery(DESKTOP_QUERY)
   const reducedMotion = useMediaQuery(REDUCED_QUERY)
   const cardRef = useRef<HTMLDivElement | null>(null)
-  const [countries, setCountries] = useState<IndexedCountry[] | null>(null)
-  const [motionCountries, setMotionCountries] = useState<IndexedCountry[] | null>(null)
-  const [failed, setFailed] = useState(false)
+  const { countries, motionCountries, failed } = useWorldCountries(onCountriesLoaded)
   const [hovered, setHovered] = useState<Pointed | null>(null)
   const [popup, setPopup] = useState<Pointed | null>(null)
   const [preferred, setPreferred] = useState<MapView>(readMapView)
@@ -44,25 +42,6 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
   const globeView = useRef<GlobeView | null>(null)
   const flatView = useRef<ViewTransform | null>(null)
   const savedGlobe = useRef<GlobeView | undefined>(undefined)
-
-  useEffect(() => {
-    let cancelled = false
-    loadWorld('motion')
-      .then(world => { if (!cancelled) setMotionCountries(buildCountryIndex(world)) })
-      .catch(error => console.error('Error loading world atlas (motion):', error))
-    loadWorld('detail')
-      .then(world => {
-        if (cancelled) return
-        const index = buildCountryIndex(world)
-        setCountries(index)
-        onCountriesLoaded?.(index.map(c => c.identity).sort((a, b) => a.name.localeCompare(b.name)))
-      })
-      .catch(error => {
-        console.error('Error loading world atlas:', error)
-        if (!cancelled) setFailed(true)
-      })
-    return () => { cancelled = true }
-  }, [onCountriesLoaded])
 
   const statusByKey = useMemo(
     () => new Map(visitedCountries.map(v => [countryKey(v), v.status] as const)),
