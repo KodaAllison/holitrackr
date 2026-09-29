@@ -187,7 +187,7 @@ A read-only portfolio endpoint at `GET /api/public/stats` exposes a privacy-limi
 ---
 
 ## 11. Compact world map data
-**Status:** In review (Atlas v2)
+**Status:** Done (Atlas v2)
 
 The map used to fetch a 14.6 MB GeoJSON from GitHub on every mount. It now
 loads our own TopoJSON, built by `scripts/build-world-atlas.mjs` from the same
@@ -207,7 +207,7 @@ source pinned to a commit:
 ---
 
 ## 12. Globe map (desktop default) + Globe / Flat toggle
-**Status:** Planned (Atlas v2)
+**Status:** In progress (Atlas v2). The canvas engine and flat map have landed; the globe and toggle are next.
 
 - **Engine:** d3-geo on a canvas, with orthographic for the globe, Equal Earth
   for flat, and a blended projection for the morph. It replaces Leaflet

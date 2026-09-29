@@ -26,7 +26,7 @@ npm run preview      # Vite preview of production build
 
 **HoliTrackr (MyAtlas)** is a full-stack travel tracking app where users mark countries they've visited on an interactive world map.
 
-**Stack:** React 18 + TypeScript + Vite + Tailwind + Leaflet (frontend), Express 5 + Better-Auth + PostgreSQL (backend), deployed to Vercel.
+**Stack:** React 18 + TypeScript + Vite + Tailwind + d3-geo canvas map (frontend), Express 5 + Better-Auth + PostgreSQL (backend), deployed to Vercel.
 
 ### Server (`server.ts`)
 The single entry point for the backend. It:
@@ -48,7 +48,8 @@ created_at    TIMESTAMPTZ
 
 ### Frontend (`src/`)
 - `App.tsx` — top-level state owner: session, visited countries array, toggle/remove/reset logic, localStorage migration
-- `src/components/WorldMap.tsx` — Leaflet map; country clicks bubble up via callback
+- `src/components/WorldMap.tsx` — canvas world map (flat Equal Earth, pan/zoom); country clicks bubble up via callback
+- `src/lib/mapEngine/` — the map engine: country index + hit-testing, micro-state clustering, canvas renderer, `useFlatMap` hook (d3-zoom)
 - `src/lib/worldAtlas.ts` — loads the compact country TopoJSON in `src/data/` (`motion` or `detail`); rebuild the data with `node scripts/build-world-atlas.mjs`
 - `src/components/Header.tsx` — navbar; accepts optional `user` prop to render `UserMenu`
 - `src/components/Stats.tsx` — visited/bucket-list counts bar
