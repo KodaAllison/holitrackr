@@ -56,6 +56,7 @@ created_at    TIMESTAMPTZ
 - `src/lib/mapEngine/` — the map engine: country index + hit-testing, micro-state clustering, canvas renderer, `useFlatMap` (d3-zoom) and `useGlobeMap` (drag/inertia/idle spin, great-circle turns) hooks
 - `src/lib/worldAtlas.ts` — loads the compact country TopoJSON in `src/data/` (`motion` or `detail`); rebuild the data with `node scripts/build-world-atlas.mjs`
 - `src/components/TripTimeline.tsx` — timeline v2: `TimelineMap` (map fills in, great-circle legs), `TimelineRuler` (draggable playhead slider, Play), `TimelineFeed` (oldest first); data from `src/lib/timelineModel.ts`
+- `src/components/SignInScreen.tsx` — signed-out "atlas plate": dark globe touring a demo journey (`src/lib/signInTour.ts`, drawn by `mapEngine/drawSignIn.ts`) and Continue with Google. Uses self-hosted Instrument Serif + JetBrains Mono (`@fontsource`), a deliberate exception to the palette/fonts rule scoped to this screen
 - `src/components/Header.tsx` — navbar; accepts optional `user` prop to render `UserMenu`
 - `src/components/Stats.tsx` — visited/bucket-list counts bar
 - `src/components/VisitedCountriesList.tsx` — sidebar list with remove, reset, journal edit
