@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from 'react'
-import type { VisitedCountry } from '../types'
+import type { Country, VisitedCountry } from '../types'
 import type { JournalValues } from '../lib/journal'
 import type { ListSort } from '../lib/countryListModel'
 import { countryKey } from '../lib/visitedCountries'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import CountryDetailPanel from './CountryDetailPanel'
 import CountryList from './CountryList'
+import CountryMarkPanel from './CountryMarkPanel'
 
 type Status = VisitedCountry['status']
 
@@ -25,6 +26,10 @@ interface CountrySidebarProps {
   loading?: boolean
   /** Beside the list's heading (mobile: the Timeline button). */
   listAction?: ReactNode
+  /** An unmarked country opened from the map (shown when nothing marked is selected). */
+  picked?: Country | null
+  /** Mark the picked country. */
+  onMark?: (country: Country, status: Status) => void
 }
 
 /**
@@ -35,7 +40,7 @@ interface CountrySidebarProps {
  */
 export default function CountrySidebar(props: CountrySidebarProps) {
   const { visitedCountries, selected, onSelect, onBack, onSetStatus, onSaveJournal, onRemove, onReset, loading, listAction } = props
-  const { onAddVisit, onUpdateVisit, onRemoveVisit } = props
+  const { onAddVisit, onUpdateVisit, onRemoveVisit, picked, onMark } = props
   const desktop = useMediaQuery('(min-width: 1024px)')
   // List UI state lives here so it survives the detail panel replacing the list.
   const [tab, setTab] = useState<Status>('visited')
@@ -51,7 +56,8 @@ export default function CountrySidebar(props: CountrySidebarProps) {
     onBack()
   }
 
-  const detail = selected && (
+  const open = selected ?? picked ?? null
+  const detail = selected ? (
     <CountryDetailPanel
       key={countryKey(selected)}
       country={selected}
@@ -63,6 +69,8 @@ export default function CountrySidebar(props: CountrySidebarProps) {
       onUpdateVisit={onUpdateVisit}
       onRemoveVisit={onRemoveVisit}
     />
+  ) : picked && (
+    <CountryMarkPanel key={countryKey(picked)} country={picked} onBack={close} onMark={status => onMark?.(picked, status)} />
   )
   const list = (
     <CountryList
@@ -82,7 +90,7 @@ export default function CountrySidebar(props: CountrySidebarProps) {
 
   if (desktop) {
     return (
-      <aside aria-label={selected ? selected.name : 'Your countries'} className="flex h-full min-h-[420px] flex-col border-l border-[#D7DEE5] bg-white">
+      <aside aria-label={open ? open.name : 'Your countries'} className="flex h-full min-h-[420px] flex-col border-l border-[#D7DEE5] bg-white">
         {detail || list}
       </aside>
     )
@@ -92,10 +100,10 @@ export default function CountrySidebar(props: CountrySidebarProps) {
     <>
       {/* The app shell's sheet provides the rounded edge and grab handle. */}
       <aside aria-label="Your countries" className="h-[65dvh] min-h-[380px] overflow-hidden bg-white">{list}</aside>
-      {detail && (
+      {open && detail && (
         <div className="fixed inset-0 z-40 flex flex-col justify-end">
           <button type="button" aria-label="Close" className="absolute inset-0 bg-black/30" onClick={close} />
-          <div role="dialog" aria-label={selected.name} className="relative flex h-[80vh] max-h-[80vh] flex-col rounded-t-[20px] bg-white shadow-2xl">
+          <div role="dialog" aria-label={open.name} className="relative flex h-[80vh] max-h-[80vh] flex-col rounded-t-[20px] bg-white shadow-2xl">
             <div aria-hidden="true" className="mx-auto mt-2 h-[5px] w-10 shrink-0 rounded-full bg-[#D7DEE5]" />
             <div className="min-h-0 flex-1">{detail}</div>
           </div>

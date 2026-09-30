@@ -4,7 +4,7 @@ import type { CountryIdentity } from '../visitedCountries'
 import { countryKey } from '../visitedCountries'
 import { clusterAt, type Cluster } from './clusters'
 import { countryAt, type IndexedCountry } from './countryIndex'
-import { centerOf, decay, dragRotate, turnTo, type LonLat, type Rotation } from './globeMotion'
+import { centerOf, decay, dragRotate, fitGlobe, turnTo, type LonLat, type Rotation } from './globeMotion'
 import { CLUSTER_RADIUS, createHatch, drawMap, ShapeCache } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
 import type { MapViewOptions } from './useFlatMap'
@@ -217,6 +217,28 @@ export function useGlobeMap(options: GlobeMapOptions) {
     kick()
   }, [kick])
 
+  /** Turn and zoom to frame the marked countries (zoomed out if none). */
+  const fitMine = useCallback(() => {
+    const { countries, statusOf } = latest.current
+    const fit = fitGlobe((countries ?? []).filter(c => statusOf(c)).map(c => c.anchor))
+    zoom.current = fit?.zoom ?? MIN_ZOOM
+    lastInput.current = performance.now()
+    latest.current.onMoveStart()
+    if (fit) turnToPoint(fit.center)
+    else kick()
+  }, [kick, turnToPoint])
+
+  // "World view": zoom back out, leaving the rotation where it is. Only a
+  // change after mount counts, not the value a remount starts with.
+  const worldViewSeq = options.worldViewSeq
+  const seenWorldView = useRef(worldViewSeq)
+  useEffect(() => {
+    if (worldViewSeq === seenWorldView.current) return
+    seenWorldView.current = worldViewSeq
+    zoom.current = MIN_ZOOM
+    kick()
+  }, [worldViewSeq, kick])
+
   // Wheel needs a non-passive native listener to stop the page scrolling.
   useEffect(() => {
     const canvas = canvasRef.current
@@ -300,7 +322,7 @@ export function useGlobeMap(options: GlobeMapOptions) {
       return
     }
     const country = 'members' in hit ? hit.members[0] : hit
-    // The country turns to the front, so anchor the popup at the centre.
+    // The country turns to the front, at the centre.
     latest.current.onPick(country, size.width / 2, size.height / 2)
     turnToCountry(country)
   }, [hitTest, kick, projectionFor, size, turnToCountry, turnToPoint, zoomBy])
@@ -315,6 +337,7 @@ export function useGlobeMap(options: GlobeMapOptions) {
     containerRef,
     canvasRef,
     zoomBy,
+    fitMine,
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerLeave, onPointerCancel: onPointerUp },
   }
 }

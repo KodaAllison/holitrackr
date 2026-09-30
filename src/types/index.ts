@@ -1,4 +1,5 @@
 export type { Country, CountryVisit, VisitedCountry } from './country.ts'
+export type { MapFilter } from './mapFilter.ts'
 export type {
   CountryIdentity,
   CountryVisitDto,

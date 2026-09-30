@@ -218,7 +218,7 @@ export function drawMap(input: RenderInput): Cluster<IndexedCountry>[] {
   }
 
   outline(input, input.hoveredKey, MAP_COLORS.hover, 1.5)
-  outline(input, input.selectedKey, MAP_COLORS.selected, 2)
+  outline(input, input.selectedKey, MAP_COLORS.selected, 2.5)
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   const clusters = clusterDots(microDots(input), CLUSTER_RADIUS)
