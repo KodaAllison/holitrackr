@@ -2,6 +2,7 @@ import type { CountryVisit, VisitedCountry } from '../types'
 import { getContinent, type Continent } from './continents'
 import { isKnownContinent } from './countryMetadata'
 import { parseVisitMonth } from './visitDate'
+import { countryKey } from './visitedCountries'
 
 /**
  * The timeline's data, derived from the visited-countries list. Time is
@@ -126,4 +127,53 @@ export function tripAtOrBefore(trips: TimelineTrip[], at: number): number {
   let index = -1
   trips.forEach((trip, i) => { if (trip.at <= at) index = i })
   return index
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/**
+ * The feed header's subtitle, e.g. "16 trips since 2015 · 5 continents ·
+ * 2 planned". Continents count every continent a trip has reached; the
+ * planned part is left out when nothing is planned.
+ */
+export function journeySummary(model: TimelineModel): string {
+  const parts: string[] = []
+  const first = model.trips[0]
+  if (first) {
+    parts.push(`${plural(model.trips.length, 'trip', 'trips')} since ${first.year}`)
+    parts.push(plural(continentCount(model), 'continent', 'continents'))
+  }
+  if (model.planned.length > 0) parts.push(`${model.planned.length} planned`)
+  return parts.join(' · ')
+}
+
+/** How many continents the dated trips have reached. */
+export function continentCount(model: TimelineModel): number {
+  return model.trips.filter(t => t.firstIn).length
+}
+
+/** A year group's stats line, e.g. "2 countries · first time in Asia & Oceania". */
+export function yearStats({ trips }: TimelineYear): string {
+  const countries = new Set(trips.map(t => countryKey(t.country))).size
+  const firsts = trips.flatMap(t => (t.firstIn ? [t.firstIn] : []))
+  const stats = plural(countries, 'country', 'countries')
+  return firsts.length > 0 ? `${stats} · first time in ${firsts.join(' & ')}` : stats
+}
+
+/** Distinct countries visited up to and including trip `active` (the map chip's count). */
+export function countriesAsOf(trips: TimelineTrip[], active: number): number {
+  return new Set(trips.slice(0, active + 1).map(t => countryKey(t.country))).size
+}
+
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** A 1-12 month as a short name, e.g. `3` → "Mar". */
+export function shortMonth(month: number): string {
+  return SHORT_MONTHS[month - 1] ?? ''
+}
+
+/** A month index as a label, e.g. "Mar 2024". */
+export function monthLabel(at: number): string {
+  const whole = Math.round(at)
+  return `${shortMonth((whole % 12) + 1)} ${Math.floor(whole / 12)}`
 }

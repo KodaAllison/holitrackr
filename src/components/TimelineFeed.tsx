@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
 import type { VisitedCountry } from '../types'
-import { countryKey } from '../lib/visitedCountries'
-import { tripKey, type TimelineModel, type TimelineTrip } from '../lib/timelineModel'
-import { formatVisitMonth, monthName } from '../lib/visitDate'
+import { journeySummary, tripKey, yearStats, type TimelineModel } from '../lib/timelineModel'
+import TimelineNextSection from './TimelineNextSection'
+import TimelineTripCard from './TimelineTripCard'
+import TimelineUndatedSection from './TimelineUndatedSection'
 
 interface TimelineFeedProps {
   model: TimelineModel
@@ -12,38 +13,14 @@ interface TimelineFeedProps {
   onOpenJournal?: (country: VisitedCountry) => void
 }
 
-function Stars({ value }: { value?: number }) {
-  if (!value) return null
-  return (
-    <span className="text-amber-400 text-xs tracking-tight" aria-label={`${value} out of 5`}>
-      {'★'.repeat(value)}<span className="text-gray-200">{'★'.repeat(5 - value)}</span>
-    </span>
-  )
-}
-
-function TripDetails({ trip }: { trip: TimelineTrip }) {
-  const { journal } = trip
-  return (
-    <>
-      {journal.place && <p className="text-sm text-gray-600 mt-0.5">{journal.place}</p>}
-      {journal.notes && <p className="mt-2 text-sm text-gray-500 leading-relaxed">{journal.notes}</p>}
-      {journal.tags && journal.tags.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {journal.tags.map(tag => (
-            <span key={tag} className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-[11px] font-medium">{tag}</span>
-          ))}
-        </div>
-      )}
-    </>
-  )
-}
-
 /**
- * The timeline's feed, oldest first: year headers (noting firsts on a
- * continent), a card per trip that moves the playhead when clicked, then the
- * planned trips and the undated countries.
+ * The timeline's feed panel ("Your journey"), oldest first: a header with
+ * the journey's stats, then year groups hanging off a rail (a card per trip
+ * that moves the playhead when clicked), the planned trips, and the undated
+ * countries. On `lg` it scrolls on its own and follows the playhead.
  */
 export default function TimelineFeed({ model, active, reducedMotion, onPick, onOpenJournal }: TimelineFeedProps) {
+  const scroller = useRef<HTMLDivElement | null>(null)
   const cards = useRef(new Map<number, HTMLButtonElement>())
 
   // Keep the active card in view as the playhead moves (e.g. while playing).
@@ -55,95 +32,55 @@ export default function TimelineFeed({ model, active, reducedMotion, onPick, onO
       return
     }
     const card = cards.current.get(active)
-    const box = card?.closest<HTMLElement>('[data-timeline-scroll]')
+    const box = scroller.current
     if (!card || !box || box.scrollHeight <= box.clientHeight) return
     const top = card.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
     if (top < box.scrollTop || top + card.offsetHeight > box.scrollTop + box.clientHeight) {
-      box.scrollTo({ top: top - 16, behavior: reducedMotion ? 'auto' : 'smooth' })
+      box.scrollTo({ top: top - 140, behavior: reducedMotion ? 'auto' : 'smooth' })
     }
   }, [active, reducedMotion])
 
+  const summary = journeySummary(model)
   let index = 0
   return (
-    <div className="space-y-8">
-      {model.years.map(({ year, trips }) => {
-        const firsts = trips.filter(t => t.firstIn)
-        const countries = new Set(trips.map(t => countryKey(t.country))).size
-        return (
-          <section key={year} aria-label={String(year)}>
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
-              <h3 className="text-2xl font-bold text-gray-800">{year}</h3>
-              <span className="text-sm text-gray-400">{countries} {countries === 1 ? 'country' : 'countries'}</span>
-              {firsts.map(t => (
-                <span key={t.firstIn} className="text-xs font-medium text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5">
-                  First time in {t.firstIn}
-                </span>
-              ))}
+    <aside aria-label="Your journey" className="flex flex-col bg-[#F8FAFC] lg:flex-1 lg:min-h-0 lg:border-l lg:border-[#D7DEE5]">
+      <header className="shrink-0 bg-white border-y border-[#E4E9EE] lg:border-t-0 px-4 pt-5 pb-4 lg:px-7">
+        <h2 className="text-[22px] font-bold text-[#1E293B]">Your journey</h2>
+        {summary && <p className="mt-1 text-sm text-[#5B6675]">{summary}</p>}
+      </header>
+      <div ref={scroller} data-timeline-scroll className="relative px-4 pt-2 pb-10 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:px-7">
+        {model.trips.length === 0 && (
+          <p className="mt-6 text-sm text-[#5B6675]">Add when you visited each country and your journey will play out here.</p>
+        )}
+        {model.years.map(group => (
+          <section key={group.year} aria-labelledby={`timeline-year-${group.year}`}>
+            <div className="flex flex-wrap items-baseline gap-x-3 mt-6 mb-3">
+              <h3 id={`timeline-year-${group.year}`} className="text-[36px] leading-tight font-extrabold tracking-[-0.02em] tabular-nums text-[#1E293B]">
+                {group.year}
+              </h3>
+              <span className="text-[13px] text-[#5B6675]">{yearStats(group)}</span>
             </div>
-            <ol className="space-y-2">
-              {trips.map(trip => {
+            <ol className="flex flex-col gap-2.5 ml-1.5 pl-[18px] border-l-2 border-[#D7DEE5]">
+              {group.trips.map(trip => {
                 const i = index++
-                const isActive = i === active
                 return (
                   <li key={tripKey(trip)}>
-                    <button
-                      type="button"
-                      ref={el => { if (el) cards.current.set(i, el); else cards.current.delete(i) }}
-                      onClick={() => onPick(i)}
-                      aria-current={isActive ? 'step' : undefined}
-                      className={`w-full text-left bg-white rounded-xl border px-4 py-3 transition-shadow ${
-                        isActive ? 'border-blue-500 ring-2 ring-blue-500/30 shadow-sm' : 'border-gray-100 shadow-sm hover:border-gray-200'
-                      } ${i > active ? 'opacity-60' : ''}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-xs text-gray-400">{monthName(trip.month)}</p>
-                          <p className="font-semibold text-gray-800">{trip.country.name}</p>
-                        </div>
-                        <Stars value={trip.journal.rating} />
-                      </div>
-                      <TripDetails trip={trip} />
-                    </button>
+                    <TimelineTripCard
+                      cardRef={el => { if (el) cards.current.set(i, el); else cards.current.delete(i) }}
+                      trip={trip}
+                      isActive={i === active}
+                      passed={i <= active}
+                      onPick={() => onPick(i)}
+                    />
                   </li>
                 )
               })}
             </ol>
           </section>
-        )
-      })}
-
-      {model.planned.length > 0 && (
-        <section aria-label="Next">
-          <h3 className="text-lg font-semibold text-[#9A5B00] mb-3">Next</h3>
-          <ol className="space-y-2">
-            {model.planned.map(trip => (
-              <li key={countryKey(trip.country)} className="rounded-xl border border-dashed border-[#F2B24E] bg-amber-50/40 px-4 py-3">
-                <p className="text-xs text-[#9A5B00]">Hoping to go · {formatVisitMonth(trip.journal.visitedAt)}</p>
-                <p className="font-semibold text-gray-800">{trip.country.name}</p>
-                <TripDetails trip={trip} />
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-
-      {model.undated.length > 0 && (
-        <section aria-label="No date recorded">
-          <h3 className="text-lg font-semibold text-gray-400 mb-3">No date recorded</h3>
-          <ul className="space-y-2">
-            {model.undated.map(country => (
-              <li key={countryKey(country)} className="flex items-center justify-between gap-2 bg-white rounded-xl border border-gray-100 px-4 py-3">
-                <span className="font-medium text-gray-600">{country.name}</span>
-                {onOpenJournal && (
-                  <button type="button" onClick={() => onOpenJournal(country)} className="text-xs font-medium text-blue-600 hover:text-blue-700">
-                    Add a date
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-    </div>
+        ))}
+        <TimelineNextSection planned={model.planned} />
+        <TimelineUndatedSection undated={model.undated} onOpenJournal={onOpenJournal} />
+      </div>
+    </aside>
   )
 }

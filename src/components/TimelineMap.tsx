@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { geoInterpolate, geoPath } from 'd3-geo'
 import { countryKey } from '../lib/visitedCountries'
-import type { TimelineModel } from '../lib/timelineModel'
-import { formatVisitMonth } from '../lib/visitDate'
+import { countriesAsOf, shortMonth, type TimelineModel } from '../lib/timelineModel'
 import type { IndexedCountry } from '../lib/mapEngine/countryIndex'
 import { MAP_COLORS } from '../lib/mapEngine/palette'
 import { createHatch, drawMap, ShapeCache } from '../lib/mapEngine/renderer'
@@ -18,6 +17,8 @@ interface TimelineMapProps {
 
 const LEG_MS = 700
 const IDENTITY = { k: 1, x: 0, y: 0 }
+/** Stops above this y (px) get their label below them: a pill above would reach the chip (bottom ≤ 64px). */
+const LABEL_FLIP_Y = 100
 
 /**
  * The timeline's map: countries fill in up to the active trip, dashed
@@ -62,20 +63,34 @@ export default function TimelineMap({ model, active, reducedMotion }: TimelineMa
         hoveredKey: null, selectedKey: activeCountry ? countryKey(activeCountry.identity) : null, hatch: hatch.current,
       })
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.setLineDash([4, 4])
+      // Older legs dashed and quiet; the newest one solid blue, drawing in.
       legs.forEach(([a, b], i) => {
         const last = i === legs.length - 1
         const interp = geoInterpolate(a.anchor, b.anchor)
         const end = last ? progress : 1
         const n = Math.max(2, Math.ceil(48 * end))
         const coordinates = Array.from({ length: n + 1 }, (_, s) => interp((s / n) * end))
+        ctx.setLineDash(last ? [] : [3, 4])
         ctx.beginPath()
         path({ type: 'LineString', coordinates })
-        ctx.strokeStyle = last ? MAP_COLORS.selected : '#64748B'
-        ctx.lineWidth = last ? 2 : 1.25
+        ctx.strokeStyle = last ? MAP_COLORS.selected : 'rgba(30,41,59,0.45)'
+        ctx.lineWidth = last ? 2.5 : 1.2
         ctx.stroke()
       })
       ctx.setLineDash([])
+      // A stop per trip so far, the active one ringed in blue.
+      for (let i = 0; i <= active; i++) {
+        const stop = anchorOf(i)
+        const p = stop && projection(stop.anchor)
+        if (!p) continue
+        ctx.beginPath()
+        ctx.arc(p[0], p[1], i === active ? 5 : 3, 0, 2 * Math.PI)
+        ctx.fillStyle = '#FFFFFF'
+        ctx.fill()
+        ctx.strokeStyle = i === active ? MAP_COLORS.selected : MAP_COLORS.visited
+        ctx.lineWidth = 2
+        ctx.stroke()
+      }
     }
 
     if (reducedMotion || legs.length === 0) {
@@ -96,23 +111,29 @@ export default function TimelineMap({ model, active, reducedMotion }: TimelineMa
   }, [canvasRef, countries, model, active, byKey, shapes, projection, size, reducedMotion])
 
   return (
-    <div ref={containerRef} className="relative w-full aspect-[2/1] select-none">
+    <div ref={containerRef} className="relative w-full aspect-[2/1] lg:aspect-auto lg:flex-1 lg:min-h-[240px] select-none">
       <canvas ref={canvasRef} aria-hidden="true" className="absolute inset-0 w-full h-full" />
       {!countries && (
-        <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">Loading map...</div>
+        <div className="absolute inset-0 flex items-center justify-center text-[#5B6675] text-sm">Loading map...</div>
+      )}
+      {trip && (
+        <p className="absolute left-3 top-3 lg:left-5 lg:top-5 z-10 rounded-[10px] bg-white/[.94] px-3.5 py-2.5 text-[13px] lg:text-sm text-[#334155] shadow-[0_1px_3px_rgba(15,23,42,0.15)]">
+          Your atlas in <strong className="text-[#1E293B]">{shortMonth(trip.month)} {trip.year}</strong>
+          {' · '}<strong className="text-[#0B7A53]">{countriesAsOf(model.trips, active)}</strong> countries
+        </p>
       )}
       {trip && label && (
         <div
-          className="absolute z-10 -translate-y-full pointer-events-none rounded-full bg-white/95 shadow border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-800 whitespace-nowrap"
+          className="absolute z-10 pointer-events-none rounded-full bg-white px-2.5 h-[26px] leading-[26px] text-[13px] font-semibold text-[#1E293B] whitespace-nowrap shadow-[0_2px_8px_rgba(15,23,42,0.2)]"
           // Anchor the pill towards the middle so it never runs off either edge.
+          // Near the top (short mobile map) it drops below the stop to clear the "Your atlas in" chip.
           style={{
             left: label[0],
-            top: label[1] - 10,
-            transform: `translate(${label[0] < size.width * 0.3 ? -12 : label[0] > size.width * 0.7 ? -100 : -50}%, -100%)`,
+            top: label[1] < LABEL_FLIP_Y ? label[1] + 10 : label[1] - 10,
+            transform: `translate(${label[0] < size.width * 0.3 ? -12 : label[0] > size.width * 0.7 ? -100 : -50}%, ${label[1] < LABEL_FLIP_Y ? 0 : -100}%)`,
           }}
         >
-          {trip.country.name}
-          <span className="ml-1 font-normal text-gray-500">{formatVisitMonth(trip.journal.visitedAt)}</span>
+          {trip.country.name} · {shortMonth(trip.month)} {trip.year}
         </div>
       )}
     </div>

@@ -415,10 +415,9 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
           </div>
         </main>
       ) : (
-        <main className="flex-1 min-h-0 overflow-y-auto bg-[#F8FAFC]">
-          <div className="mx-auto max-w-7xl">
-            <TripTimeline visitedCountries={visitedCountries} onOpenJournal={setJournalCountry} />
-          </div>
+        // Full-bleed: TripTimeline fills this height (definite on lg) and scrolls its own feed.
+        <main className="flex-1 min-h-0 bg-[#F8FAFC] lg:overflow-hidden">
+          <TripTimeline visitedCountries={visitedCountries} onOpenJournal={setJournalCountry} />
         </main>
       )}
     </div>
