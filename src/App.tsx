@@ -102,6 +102,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   const selectedCountry = selected ? findCountry(visitedCountries, selected) ?? null : null
 
   const dismissUndo = useCallback(() => setRemoved(null), [])
+  const pendingRemoval = useRef<Promise<void>>(Promise.resolve())
   const focusMap = (country: Country) => setMapFocus(prev => ({ country, seq: (prev?.seq ?? 0) + 1 }))
   const selectCountry = (country: Country) => {
     setSelected(country)
@@ -117,23 +118,23 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     }
   }
 
+  /** Optimistic journal save. Rejects on failure (after re-syncing) so callers can say so. */
   const updateCountryJournal = async (
     country: VisitedCountry,
     updates: CountryJournalUpdates
   ): Promise<void> => {
     const { notes, place, visitedAt, rating, tags } = updates
-    setVisitedCountries(prev =>
-      prev.map(v =>
-        sameCountry(v, country)
-          ? { ...v, notes, place: place.trim() || undefined, visitedAt: visitedAt || undefined, rating, tags }
-          : v
-      )
-    )
+    const apply = (v: VisitedCountry): VisitedCountry =>
+      ({ ...v, notes, place: place.trim() || undefined, visitedAt: visitedAt || undefined, rating, tags })
+    setVisitedCountries(prev => prev.map(v => (sameCountry(v, country) ? apply(v) : v)))
+    // An edit flushed as the panel closes on Remove must survive an Undo.
+    setRemoved(prev => (prev && sameCountry(prev, country) ? apply(prev) : prev))
     try {
       await countriesClient.updateJournal(country, updates)
     } catch (err) {
       console.warn('Failed to update journal:', err)
       await refreshCountries()
+      throw err
     }
   }
 
@@ -271,7 +272,9 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   const removeCountry = (country: VisitedCountry) => {
     setRemoved(country)
     setVisitedCountries(prev => prev.filter(v => !sameCountry(v, country)))
-    void countriesClient.remove(country).catch(async (err) => {
+    // Kept so Undo can wait for it: a slow DELETE landing after the restore
+    // would otherwise wipe the restored row.
+    pendingRemoval.current = countriesClient.remove(country).catch(async (err) => {
       console.warn('Failed to remove country:', err)
       await refreshCountries()
     })
@@ -284,6 +287,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     setRemoved(null)
     setVisitedCountries(prev => (findCountry(prev, country) ? prev : [...prev, country]))
     try {
+      await pendingRemoval.current
       await countriesClient.add({ code: country.code, name: country.name, status: country.status, notes: country.notes })
       await countriesClient.updateJournal(country, journalValuesOf(country))
       // Removing deleted the extra visits too; add them back (they get new ids).
@@ -346,7 +350,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
       {journalCountry && (
         <CountryDetailModal
           country={journalCountry}
-          onSave={(updates) => { void updateCountryJournal(journalCountry, updates); setJournalCountry(null) }}
+          onSave={(updates) => { updateCountryJournal(journalCountry, updates).catch(() => undefined); setJournalCountry(null) }}
           onClose={() => setJournalCountry(null)}
         />
       )}
@@ -420,7 +424,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
                 onSelect={selectCountry}
                 onBack={() => setSelected(null)}
                 onSetStatus={(country, status) => toggleCountry(country, status)}
-                onSaveJournal={(country, values) => { void updateCountryJournal(country, values) }}
+                onSaveJournal={updateCountryJournal}
                 onRemove={removeCountry}
                 onAddVisit={(country, values) => { void addVisit(country, values) }}
                 onUpdateVisit={(id, values) => { void updateVisit(id, values) }}

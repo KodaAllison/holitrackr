@@ -11,7 +11,8 @@ interface CountryDetailPanelProps {
   country: VisitedCountry
   onBack: () => void
   onSetStatus: (status: Status) => void
-  onSave: (values: JournalValues) => void
+  /** Resolves once saved; rejects if the save failed (the edit is kept here). */
+  onSave: (values: JournalValues) => Promise<void>
   onRemove: () => void
   onAddVisit: (values: JournalValues) => void
   onUpdateVisit: (id: number, values: JournalValues) => void
@@ -27,7 +28,7 @@ const AUTOSAVE_MS = 600
 export default function CountryDetailPanel(props: CountryDetailPanelProps) {
   const { country, onBack, onSetStatus, onSave, onRemove, onAddVisit, onUpdateVisit, onRemoveVisit } = props
   const [values, setValues] = useState(() => journalValuesOf(country))
-  const [saved, setSaved] = useState<'idle' | 'pending' | 'saved'>('idle')
+  const [saved, setSaved] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'failed'>('idle')
   const save = useRef(onSave)
   useEffect(() => { save.current = onSave })
 
@@ -36,8 +37,12 @@ export default function CountryDetailPanel(props: CountryDetailPanelProps) {
   useEffect(() => {
     if (!dirty) return
     const timer = window.setTimeout(() => {
-      save.current(values)
-      setSaved('saved')
+      setSaved('saving')
+      // "Saved" only once the server confirms; on failure keep the edit and say so.
+      save.current(values).then(
+        () => setSaved(s => (s === 'saving' ? 'saved' : s)),
+        () => setSaved(s => (s === 'saving' ? 'failed' : s)),
+      )
     }, AUTOSAVE_MS)
     return () => window.clearTimeout(timer)
   }, [values, dirty])
@@ -45,7 +50,9 @@ export default function CountryDetailPanel(props: CountryDetailPanelProps) {
   // Flush an unsaved edit if the panel closes before the timer fires.
   const latest = useRef({ values, dirty })
   useEffect(() => { latest.current = { values, dirty } })
-  useEffect(() => () => { if (latest.current.dirty) save.current(latest.current.values) }, [])
+  useEffect(() => () => {
+    if (latest.current.dirty) save.current(latest.current.values).catch(() => undefined)
+  }, [])
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -66,9 +73,16 @@ export default function CountryDetailPanel(props: CountryDetailPanelProps) {
         )}
       </div>
       <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-        <span role="status" className="text-xs text-gray-400">
-          {saved === 'pending' ? 'Saving…' : saved === 'saved' ? 'Saved' : 'Changes save automatically'}
-        </span>
+        {saved === 'failed' ? (
+          <span role="alert" className="text-xs text-red-600">
+            Couldn't save.{' '}
+            <button type="button" onClick={() => setSaved('pending')} className="font-semibold underline">Try again</button>
+          </span>
+        ) : (
+          <span role="status" className="text-xs text-gray-400">
+            {saved === 'pending' || saved === 'saving' ? 'Saving…' : saved === 'saved' ? 'Saved' : 'Changes save automatically'}
+          </span>
+        )}
         <button type="button" onClick={onRemove} className="text-xs font-medium text-red-600 hover:text-red-700">
           Remove from my atlas
         </button>
