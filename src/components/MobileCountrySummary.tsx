@@ -1,6 +1,7 @@
 import type { VisitedCountry } from '../types'
 import { getContinent } from '../lib/continents'
 import { countrySummary } from '../lib/mobileSheet'
+import { useFocusOnMount } from '../lib/useFocusOnMount'
 import StatusControl from './StatusControl'
 
 type Status = VisitedCountry['status']
@@ -20,12 +21,13 @@ interface MobileCountrySummaryProps {
  */
 export default function MobileCountrySummary({ country, onClose, onSetStatus, onRemove, onEditJournal }: MobileCountrySummaryProps) {
   const summary = countrySummary(country)
+  const heading = useFocusOnMount<HTMLHeadingElement>()
   return (
     <div className="flex flex-col gap-3.5 px-5 pb-6">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5B6675]">{getContinent(country.code, country.name)}</span>
-          <h2 className="truncate text-[26px] font-bold leading-tight tracking-[-0.01em] text-[#1E293B]">{country.name}</h2>
+          <h2 ref={heading} tabIndex={-1} className="truncate focus:outline-none text-[26px] font-bold leading-tight tracking-[-0.01em] text-[#1E293B]">{country.name}</h2>
           <p className="text-sm text-[#5B6675]">
             {summary.text}
             {summary.stars && <> · <span className="text-[#A86B0C]" aria-label={`${summary.stars.length} out of 5`}>{summary.stars}</span></>}
