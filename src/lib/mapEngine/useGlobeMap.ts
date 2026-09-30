@@ -123,7 +123,7 @@ export function useGlobeMap(options: GlobeMapOptions) {
     }
 
     if (moving) {
-      frame.current = requestAnimationFrame(tick)
+      frame.current = requestAnimationFrame(t => tickRef.current(t))
     } else {
       // One more frame at rest swaps in the detailed countries.
       lastFrame.current = 0
@@ -135,15 +135,21 @@ export function useGlobeMap(options: GlobeMapOptions) {
     }
   }, [canvasRef, projectionFor, size, spinning])
 
+  // Frames always run the latest `tick`: a pending frame scheduled before a
+  // resize (or before the data arrived) must not draw with stale size/props.
+  const tickRef = useRef(tick)
   const kick = useCallback(() => {
-    if (!frame.current) frame.current = requestAnimationFrame(tick)
-  }, [tick])
+    if (!frame.current) frame.current = requestAnimationFrame(t => tickRef.current(t))
+  }, [])
   const kickRef = useRef(kick)
 
-  useEffect(() => { latest.current = options; kickRef.current = kick })
+  useEffect(() => { latest.current = options; tickRef.current = tick; kickRef.current = kick })
+
+  // Idle spin waits IDLE_MS from mount, not from page load.
+  useEffect(() => { lastInput.current = performance.now() }, [])
 
   const { countries, motionCountries, statusOf, hoveredKey, selectedKey } = options
-  useEffect(kick, [countries, motionCountries, statusOf, hoveredKey, selectedKey, kick])
+  useEffect(kick, [countries, motionCountries, statusOf, hoveredKey, selectedKey, size, kick])
 
   useEffect(() => () => {
     cancelAnimationFrame(frame.current)
