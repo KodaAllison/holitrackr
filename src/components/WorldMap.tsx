@@ -5,11 +5,12 @@ import type { IndexedCountry } from '../lib/mapEngine/countryIndex'
 import { useWorldCountries } from '../lib/mapEngine/useWorldCountries'
 import type { ViewTransform } from '../lib/mapEngine/renderer'
 import type { MapViewOptions } from '../lib/mapEngine/useFlatMap'
-import { DEFAULT_GLOBE, type GlobeView, type MapInset } from '../lib/mapEngine/views'
+import { DEFAULT_GLOBE, NO_INSET, type GlobeView, type MapInset } from '../lib/mapEngine/views'
 import { SHEET_PEEK } from '../lib/mobileSheet'
 import { introPlayed, markIntroPlayed, readMapView, writeMapView } from '../lib/mapViewPreference'
 import { SHOW_ALL, shownStatus } from '../lib/mapFilter'
 import { useMediaQuery } from '../lib/useMediaQuery'
+import { useSelectedLabel } from '../lib/useSelectedLabel'
 import FlatMapSurface from './FlatMapSurface'
 import GlobeMapSurface from './GlobeMapSurface'
 import IntroMapSurface from './IntroMapSurface'
@@ -19,6 +20,7 @@ import MapOverlays, { type Pointed } from './MapOverlays'
 import type { MapView } from './MapViewToggle'
 import MorphMapSurface from './MorphMapSurface'
 import MobileMapControls from './MobileMapControls'
+import SelectedCountryLabel from './SelectedCountryLabel'
 
 interface WorldMapProps {
   visitedCountries: VisitedCountry[]
@@ -74,6 +76,8 @@ export default function WorldMap(props: WorldMapProps) {
   // Once per session, desktop only, and never with reduced motion.
   const [intro, setIntro] = useState(() => !introPlayed())
   const showIntro = intro && desktop && !reducedMotion
+  // Mobile: the label stays in the band between the floating search and the sheet.
+  const label = useSelectedLabel(desktop ? NO_INSET : MOBILE_INSET)
 
   const statusByKey = useMemo(
     () => new Map(visitedCountries.map(v => [countryKey(v), v.status] as const)),
@@ -95,6 +99,7 @@ export default function WorldMap(props: WorldMapProps) {
     onPick: c => { setHovered(null); setInteracted(true); onSelectCountry?.(c.identity) },
     onMoveStart: () => setInteracted(true),
     worldViewSeq,
+    onSelectedAnchor: label.place,
   }
 
   const switchView = (to: MapView) => {
@@ -165,6 +170,7 @@ export default function WorldMap(props: WorldMapProps) {
           {overlays}
         </FlatMapSurface>
       )}
+      {selected && !showIntro && !morph && <SelectedCountryLabel name={selected.name} labelRef={label.ref} />}
       {!showIntro && (
         <>
           <MapChrome

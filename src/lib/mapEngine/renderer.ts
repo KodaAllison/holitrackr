@@ -4,6 +4,7 @@ import { countryKey } from '../visitedCountries'
 import { clusterDots, type Cluster, type Dot } from './clusters'
 import { MICRO_AREA, type IndexedCountry } from './countryIndex'
 import { MAP_COLORS } from './palette'
+import { onNearSide } from '../selectedLabel'
 
 type Status = VisitedCountry['status']
 
@@ -224,6 +225,24 @@ export function drawMap(input: RenderInput): Cluster<IndexedCountry>[] {
   const clusters = clusterDots(microDots(input), CLUSTER_RADIUS)
   drawClusters(input, clusters)
   return clusters
+}
+
+/**
+ * Where a country's anchor is on screen (CSS px, with the pan/zoom applied),
+ * for the selected-country label. Null when no country matches `key`, or,
+ * on the globe, when the anchor is on (or just short of) the far side.
+ */
+export function screenAnchor(
+  shapes: ShapeCache,
+  transform: ViewTransform,
+  countries: IndexedCountry[] | null,
+  key: string | null,
+): [number, number] | null {
+  const country = key && countries?.find(c => countryKey(c.identity) === key)
+  if (!country) return null
+  if (shapes.facing && !onNearSide(country.anchor, shapes.facing)) return null
+  const p = shapes.anchor(country)
+  return p ? [p[0] * transform.k + transform.x, p[1] * transform.k + transform.y] : null
 }
 
 /** Diagonal amber hatch for bucket-list countries. Needs a DOM canvas. */
