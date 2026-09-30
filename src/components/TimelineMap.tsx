@@ -17,6 +17,8 @@ interface TimelineMapProps {
 
 const LEG_MS = 700
 const IDENTITY = { k: 1, x: 0, y: 0 }
+/** Stops above this y (px) get their label below them: a pill above would reach the chip (bottom ≤ 64px). */
+const LABEL_FLIP_Y = 100
 
 /**
  * The timeline's map: countries fill in up to the active trip, dashed
@@ -124,10 +126,11 @@ export default function TimelineMap({ model, active, reducedMotion }: TimelineMa
         <div
           className="absolute z-10 pointer-events-none rounded-full bg-white px-2.5 h-[26px] leading-[26px] text-[13px] font-semibold text-[#1E293B] whitespace-nowrap shadow-[0_2px_8px_rgba(15,23,42,0.2)]"
           // Anchor the pill towards the middle so it never runs off either edge.
+          // Near the top (short mobile map) it drops below the stop to clear the "Your atlas in" chip.
           style={{
             left: label[0],
-            top: label[1] - 10,
-            transform: `translate(${label[0] < size.width * 0.3 ? -12 : label[0] > size.width * 0.7 ? -100 : -50}%, -100%)`,
+            top: label[1] < LABEL_FLIP_Y ? label[1] + 10 : label[1] - 10,
+            transform: `translate(${label[0] < size.width * 0.3 ? -12 : label[0] > size.width * 0.7 ? -100 : -50}%, ${label[1] < LABEL_FLIP_Y ? 0 : -100}%)`,
           }}
         >
           {trip.country.name} · {shortMonth(trip.month)} {trip.year}

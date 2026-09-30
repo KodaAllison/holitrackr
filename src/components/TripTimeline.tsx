@@ -66,7 +66,7 @@ export default function TripTimeline({ visitedCountries, onOpenJournal }: TripTi
 
   const hasTrips = model.trips.length > 0
   return (
-    <div className="h-full min-h-0 flex flex-col overflow-y-auto lg:flex-row lg:overflow-hidden lg:max-h-[calc(100vh-64px)] text-[#1E293B]">
+    <div className="h-full min-h-0 flex flex-col overflow-y-auto lg:flex-row lg:overflow-hidden text-[#1E293B]">
       {hasTrips && (
         <section aria-label="Journey map and time scrubber" className="flex flex-col shrink-0 bg-[#DCE6EE] lg:w-[60%] lg:min-h-0">
           <TimelineMap model={model} active={active} reducedMotion={reducedMotion} />

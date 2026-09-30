@@ -11,10 +11,10 @@ const OPTIONS: { value: MapView; label: string }[] = [
   { value: 'flat', label: 'Flat map' },
 ]
 
-/** Segmented Globe / Flat map control, top-left of the map. */
+/** Segmented Globe / Flat map control, top-left of the map (the parent positions it). */
 export default function MapViewToggle({ view, disabled, onChange }: MapViewToggleProps) {
   return (
-    <div role="group" aria-label="Map view" className="absolute top-3 left-3 z-10 flex p-1 gap-1 bg-white rounded-lg shadow-md border border-gray-200">
+    <div role="group" aria-label="Map view" className="flex p-1 gap-1 bg-white rounded-[10px] shadow-[0_1px_3px_rgba(15,23,42,0.15)]">
       {OPTIONS.map(option => (
         <button
           key={option.value}
@@ -22,8 +22,8 @@ export default function MapViewToggle({ view, disabled, onChange }: MapViewToggl
           aria-pressed={view === option.value}
           disabled={disabled}
           onClick={() => view !== option.value && onChange(option.value)}
-          className={`h-8 px-3 rounded-md text-sm font-semibold transition-colors ${
-            view === option.value ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'
+          className={`h-9 px-3.5 rounded-[7px] text-sm font-semibold transition-colors ${
+            view === option.value ? 'bg-[#EEF2F6] text-[#1E293B]' : 'text-[#5B6675] hover:text-[#1E293B]'
           }`}
         >
           {option.label}
