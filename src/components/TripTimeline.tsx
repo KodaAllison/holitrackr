@@ -16,9 +16,10 @@ interface TripTimelineProps {
 const STEP_MS = 1400
 
 /**
- * Timeline v2: scrub your journey. The map fills in as the playhead moves
- * along the ruler; the feed (oldest first) follows it. Play steps through
- * every trip in order.
+ * Timeline v2: scrub your journey. Full-bleed, filling the slot it is given:
+ * the map and ruler on the left (~60%), the feed (oldest first) on the right.
+ * The map fills in as the playhead moves; Play steps through every trip.
+ * Below `lg` the two stack and the whole view scrolls.
  */
 export default function TripTimeline({ visitedCountries, onOpenJournal }: TripTimelineProps) {
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
@@ -52,37 +53,33 @@ export default function TripTimeline({ visitedCountries, onOpenJournal }: TripTi
 
   if (visited.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-        <svg className="w-12 h-12 mb-4 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="h-full min-h-[320px] flex flex-col items-center justify-center bg-[#F8FAFC] px-4 text-center text-[#5B6675]">
+        <svg className="w-10 h-10 mb-4 text-[#94A3B8]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
             d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
-        <p className="text-sm">No visited countries yet.</p>
-        <p className="text-xs mt-1">Mark countries as visited on the map to see your timeline.</p>
+        <p className="text-[15px] font-semibold text-[#1E293B]">No trips yet</p>
+        <p className="text-sm mt-1">Mark countries as visited on the map to see your journey here.</p>
       </div>
     )
   }
 
-  if (model.trips.length === 0) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-6">
-        <p className="text-sm text-gray-500 mb-6">
-          Add when you visited each country and your journey will play out here.
-        </p>
-        <TimelineFeed model={model} active={-1} reducedMotion={reducedMotion} onPick={pick} onOpenJournal={onOpenJournal} />
-      </div>
-    )
-  }
-
+  const hasTrips = model.trips.length > 0
   return (
-    <div className="px-4 py-6 grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
-      <div className="lg:col-span-3 lg:sticky lg:top-4 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        <TimelineMap model={model} active={active} reducedMotion={reducedMotion} />
-        <TimelineRuler model={model} active={active} playing={playing} onChange={pick} onTogglePlay={togglePlay} />
-      </div>
-      <div data-timeline-scroll className="lg:col-span-2 lg:max-h-[640px] lg:overflow-y-auto lg:pr-1">
-        <TimelineFeed model={model} active={active} reducedMotion={reducedMotion} onPick={pick} onOpenJournal={onOpenJournal} />
-      </div>
+    <div className="h-full min-h-0 flex flex-col overflow-y-auto lg:flex-row lg:overflow-hidden lg:max-h-[calc(100vh-64px)] text-[#1E293B]">
+      {hasTrips && (
+        <section aria-label="Journey map and time scrubber" className="flex flex-col shrink-0 bg-[#DCE6EE] lg:w-[60%] lg:min-h-0">
+          <TimelineMap model={model} active={active} reducedMotion={reducedMotion} />
+          <TimelineRuler model={model} active={active} playing={playing} onChange={pick} onTogglePlay={togglePlay} />
+        </section>
+      )}
+      <TimelineFeed
+        model={model}
+        active={hasTrips ? active : -1}
+        reducedMotion={reducedMotion}
+        onPick={pick}
+        onOpenJournal={onOpenJournal}
+      />
     </div>
   )
 }

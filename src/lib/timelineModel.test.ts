@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { VisitedCountry } from '../types'
-import { buildTimeline, monthIndex, nearestTrip, tripAtOrBefore, tripKey } from './timelineModel'
+import {
+  buildTimeline, continentCount, countriesAsOf, journeySummary, monthIndex, monthLabel, nearestTrip, shortMonth,
+  tripAtOrBefore, tripKey, yearStats,
+} from './timelineModel'
 
 const today = new Date(2026, 7, 15) // Aug 2026
 
@@ -115,5 +118,45 @@ describe('nearestTrip / tripAtOrBefore', () => {
   it('finds the latest trip not after a month', () => {
     expect(tripAtOrBefore(trips, monthIndex(2017, 1))).toBe(2)
     expect(tripAtOrBefore(trips, monthIndex(2014, 1))).toBe(-1)
+  })
+})
+
+describe('feed and chip text', () => {
+  const model = buildTimeline(countries, today)
+
+  it('summarises the journey for the feed header', () => {
+    expect(journeySummary(model)).toBe('4 trips since 2015 · 2 continents · 2 planned')
+    expect(continentCount(model)).toBe(2)
+  })
+
+  it('leaves out what is missing', () => {
+    expect(journeySummary(buildTimeline([], today))).toBe('')
+    expect(journeySummary(buildTimeline([countries[0]], today))).toBe('1 trip since 2019 · 1 continent')
+    expect(journeySummary(buildTimeline([countries[5]], today))).toBe('1 planned')
+  })
+
+  it('describes each year, noting new continents', () => {
+    expect(model.years.map(yearStats)).toEqual([
+      '2 countries · first time in Europe',
+      '1 country',
+      '1 country · first time in Asia',
+    ])
+  })
+
+  it('counts a repeat visit once in the year and in the chip', () => {
+    const repeat = buildTimeline([
+      { code: 'JPN', name: 'Japan', status: 'visited', visitedAt: '2019-04', visits: [{ id: 1, visitedAt: '2019-10' }] },
+      { code: 'KOR', name: 'South Korea', status: 'visited', visitedAt: '2019-06' },
+    ], today)
+    expect(yearStats(repeat.years[0])).toBe('2 countries · first time in Asia')
+    expect(countriesAsOf(repeat.trips, 0)).toBe(1)
+    expect(countriesAsOf(repeat.trips, 2)).toBe(2)
+    expect(countriesAsOf(repeat.trips, -1)).toBe(0)
+  })
+
+  it('formats months', () => {
+    expect(shortMonth(3)).toBe('Mar')
+    expect(monthLabel(monthIndex(2024, 3))).toBe('Mar 2024')
+    expect(monthLabel(monthIndex(2024, 12) + 0.4)).toBe('Dec 2024')
   })
 })
