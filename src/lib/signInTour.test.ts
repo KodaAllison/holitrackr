@@ -33,6 +33,12 @@ describe('tourAt', () => {
     expect(tourAt(stops, STEP_SECONDS * stops.length + 0.1, false).index).toBe(0)
   })
 
+  it('stays on a real stop when the clock lands on the end of a cycle', () => {
+    const end = tourAt(stops, 27.2, false)
+    expect(end.index).toBeLessThan(stops.length)
+    expect(stops[end.index]).toBeDefined()
+  })
+
   it('is a still, fully lit frame with reduced motion', () => {
     const still = tourAt(stops, 123, true)
     expect(stops[still.index].country.identity.name).toBe('Italy')

@@ -1,6 +1,7 @@
 import { geoDistance, geoOrthographic, geoPath } from 'd3-geo'
 import type { IndexedCountry } from './countryIndex'
 import { MAP_COLORS } from './palette'
+import { isCompact, orbitGeometry, placeSignInCallout } from '../signInCallout'
 
 /**
  * The signed-out "atlas plate": a dark globe in an instrument bezel, the
@@ -30,6 +31,8 @@ export interface SignInFrame {
   /** Radians the orbiting headline has turned. */
   orbit: number
   callout: { stop: TourStop; alpha: number } | null
+  /** Top of the call to action below the globe; the callout stays above it. */
+  ctaTop: number
 }
 
 const DARK = {
@@ -72,8 +75,7 @@ function drawBezel(f: SignInFrame) {
 
 function drawOrbit(f: SignInFrame) {
   const { ctx, cx, cy } = f
-  const r = f.radius + (f.radius < 160 ? 34 : 44)
-  const size = f.radius < 160 ? 10 : 12
+  const { radius: r, fontSize: size } = orbitGeometry(f.radius)
   ctx.save()
   ctx.font = `500 ${size}px ${MONO}`
   const charWidth = ctx.measureText('M').width + size * 0.27
@@ -102,32 +104,44 @@ function drawOrbit(f: SignInFrame) {
 
 function drawCallout(f: SignInFrame, project: (p: [number, number]) => [number, number] | null) {
   if (!f.callout) return
-  const { ctx, cx, cy, radius, width, height } = f
+  const { ctx, cx, cy, radius, width } = f
   const { stop, alpha } = f.callout
   const p = project(stop.country.anchor)
   if (!p) return
-  const compact = radius < 160
-  const dx = p[0] - cx
-  const dy = p[1] - cy
-  const angle = Math.hypot(dx, dy) < 20 ? -0.6 : Math.atan2(dy, dx)
-  const side = Math.cos(angle) >= 0 ? 1 : -1
-  const reach = radius + (compact ? 34 : 70)
-  const ex = cx + Math.cos(angle) * reach
-  const ey = Math.max(60, Math.min(height - 140, cy + Math.sin(angle) * reach))
-  const lx = ex + side * (compact ? 12 : 28)
+  const compact = isCompact(radius)
   const name = DISPLAY_NAMES[stop.country.identity.name] ?? stop.country.identity.name
   const [lon, lat] = stop.country.anchor
   const coords = `${Math.abs(lat).toFixed(1)}° ${lat >= 0 ? 'N' : 'S'}   ${Math.abs(lon).toFixed(1)}° ${lon >= 0 ? 'E' : 'W'}`
+  const status = stop.status === 'visited' ? '● VISITED' : '◌ ON THE LIST'
   const nameSize = compact ? 26 : 44
+  const baseline = nameSize * 0.28
+  const coordsY = baseline + (compact ? 16 : 24)
+  const statusY = baseline + (compact ? 30 : 44)
+  const nameFont = `italic ${nameSize}px ${SERIF}`
+  const monoFont = `500 ${compact ? 9 : 11}px ${MONO}`
 
   ctx.save()
+  // Measure the whole label so it can be kept clear of the ring and on screen.
+  ctx.font = nameFont
+  const nameWidth = ctx.measureText(name).width
+  ctx.font = monoFont
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '2px'
+  const monoWidth = Math.max(ctx.measureText(coords).width, ctx.measureText(status).width)
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px'
+  const placement = placeSignInCallout(p, { cx, cy, radius, ctaTop: f.ctaTop }, width, {
+    width: Math.max(nameWidth, monoWidth, compact ? 130 : 190),
+    above: nameSize * 0.5,
+    below: statusY + 4,
+  })
+  const [ex, ey] = placement.elbow
+
   ctx.globalAlpha = alpha
   ctx.strokeStyle = 'rgba(248,250,252,0.85)'
   ctx.lineWidth = 1
   ctx.beginPath()
   ctx.moveTo(p[0], p[1])
   ctx.lineTo(ex, ey)
-  ctx.lineTo(lx, ey)
+  ctx.lineTo(placement.lineEndX, ey)
   ctx.stroke()
   ctx.fillStyle = DARK.ink
   ctx.beginPath()
@@ -139,21 +153,27 @@ function drawCallout(f: SignInFrame, project: (p: [number, number]) => [number, 
   ctx.stroke()
   ctx.globalAlpha = alpha
 
-  // Keep the label on screen: measure it and pull it back inside if needed.
-  ctx.font = `italic ${nameSize}px ${SERIF}`
-  const labelWidth = Math.max(ctx.measureText(name).width, compact ? 130 : 190)
-  let tx = lx + side * 10
-  if (side > 0) tx = Math.min(tx, width - 12 - labelWidth)
-  else tx = Math.max(tx, 12 + labelWidth)
-  ctx.textAlign = side > 0 ? 'left' : 'right'
+  if (placement.plate) {
+    // No clear spot on this screen: back the label so it masks the ring.
+    const { left, top, right, bottom } = placement.rect
+    ctx.fillStyle = 'rgba(11,18,32,0.9)'
+    ctx.beginPath()
+    ctx.roundRect(left - 8, top - 6, right - left + 16, bottom - top + 12, 8)
+    ctx.fill()
+  }
+
+  const tx = placement.textX
+  ctx.textAlign = placement.align
   ctx.textBaseline = 'alphabetic'
-  ctx.fillText(name, tx, ey + nameSize * 0.28)
-  ctx.font = `500 ${compact ? 9 : 11}px ${MONO}`
+  ctx.fillStyle = DARK.ink
+  ctx.font = nameFont
+  ctx.fillText(name, tx, ey + baseline)
+  ctx.font = monoFont
   if ('letterSpacing' in ctx) ctx.letterSpacing = '2px'
   ctx.fillStyle = DARK.muted
-  ctx.fillText(coords, tx, ey + nameSize * 0.28 + (compact ? 16 : 24))
+  ctx.fillText(coords, tx, ey + coordsY)
   ctx.fillStyle = stop.status === 'visited' ? '#6EE7B7' : '#FCD34D'
-  ctx.fillText(stop.status === 'visited' ? '● VISITED' : '◌ ON THE LIST', tx, ey + nameSize * 0.28 + (compact ? 30 : 44))
+  ctx.fillText(status, tx, ey + statusY)
   ctx.restore()
 }
 
