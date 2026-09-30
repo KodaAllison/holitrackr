@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { VisitedCountry } from '../types'
 import { getContinent } from '../lib/continents'
 import { countryKey, withStatus } from '../lib/visitedCountries'
@@ -12,6 +12,8 @@ interface CountryListProps {
   onSelect: (country: VisitedCountry) => void
   onSetStatus: (country: VisitedCountry, status: Status) => void
   onReset?: () => void
+  /** Beside the heading, e.g. the mobile Timeline button. */
+  action?: ReactNode
 }
 
 function groupByContinent(countries: VisitedCountry[]): [string, VisitedCountry[]][] {
@@ -48,7 +50,7 @@ function onListKeyDown(e: React.KeyboardEvent<HTMLElement>) {
  * by continent, and an inline status pill on every row. Selecting a row
  * opens its detail panel and turns the map to it.
  */
-export default function CountryList({ visitedCountries, onSelect, onSetStatus, onReset }: CountryListProps) {
+export default function CountryList({ visitedCountries, onSelect, onSetStatus, onReset, action }: CountryListProps) {
   const [tab, setTab] = useState<Status>('visited')
   const visited = withStatus(visitedCountries, 'visited')
   const bucket = withStatus(visitedCountries, 'bucketlist')
@@ -61,7 +63,10 @@ export default function CountryList({ visitedCountries, onSelect, onSetStatus, o
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="px-4 pt-4 pb-3 space-y-3 border-b border-gray-100">
-        <h2 className="text-lg font-bold text-gray-900">Your countries</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-lg font-bold text-gray-900">Your countries</h2>
+          {action}
+        </div>
         <div role="tablist" aria-label="Country lists" className="grid grid-cols-2 p-1 gap-1 bg-gray-100 rounded-lg">
           {tabs.map(t => (
             <button

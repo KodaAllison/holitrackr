@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { VisitedCountry } from '../types'
 import type { JournalValues } from '../lib/journal'
 import { countryKey } from '../lib/visitedCountries'
@@ -19,9 +20,12 @@ interface CountrySidebarProps {
   onUpdateVisit: (id: number, values: JournalValues) => void
   onRemoveVisit: (id: number) => void
   onReset?: () => void
+  /** Beside the list's heading (mobile: the Timeline button). */
+  listAction?: ReactNode
 }
 
-const CARD = 'bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden'
+// The app shell provides the panel's edge (desktop column / mobile sheet).
+const CARD = 'bg-white overflow-hidden'
 
 /**
  * The map's sidebar: the country list, or one country's detail panel. On
@@ -30,7 +34,7 @@ const CARD = 'bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidd
  */
 export default function CountrySidebar(props: CountrySidebarProps) {
   const { visitedCountries, selected, onSelect, onBack, onSetStatus, onSaveJournal, onRemove, onReset } = props
-  const { onAddVisit, onUpdateVisit, onRemoveVisit } = props
+  const { onAddVisit, onUpdateVisit, onRemoveVisit, listAction } = props
   const desktop = useMediaQuery('(min-width: 1024px)')
 
   const detail = selected && (
@@ -46,13 +50,13 @@ export default function CountrySidebar(props: CountrySidebarProps) {
       onRemoveVisit={onRemoveVisit}
     />
   )
-  const list = <CountryList visitedCountries={visitedCountries} onSelect={onSelect} onSetStatus={onSetStatus} onReset={onReset} />
+  const list = <CountryList visitedCountries={visitedCountries} onSelect={onSelect} onSetStatus={onSetStatus} onReset={onReset} action={listAction} />
 
-  if (desktop) return <div className={`${CARD} h-[420px]`}>{detail || list}</div>
+  if (desktop) return <div className={`${CARD} h-full`}>{detail || list}</div>
 
   return (
     <>
-      <div className={`${CARD} h-[420px]`}>{list}</div>
+      <div className={`${CARD} h-[65dvh] min-h-[380px]`}>{list}</div>
       {detail && (
         <div className="fixed inset-0 z-40 flex flex-col justify-end">
           <button type="button" aria-label="Close" className="absolute inset-0 bg-black/30" onClick={onBack} />
