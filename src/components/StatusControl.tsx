@@ -6,9 +6,11 @@ interface StatusControlProps {
   status: Status
   onSetStatus: (status: Status) => void
   onRemove: () => void
+  /** Mobile sheet: 48px buttons, radius 12, 15px text, 8px gaps. */
+  large?: boolean
 }
 
-const BUTTON = 'flex h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] border-[1.5px] text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-1'
+const BASE = 'flex items-center justify-center gap-1.5 whitespace-nowrap border-[1.5px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-1'
 
 function Check() {
   return (
@@ -19,10 +21,11 @@ function Check() {
 }
 
 /** The detail panel's Visited / Bucket list / Remove buttons (FEATURES #9). */
-export default function StatusControl({ status, onSetStatus, onRemove }: StatusControlProps) {
+export default function StatusControl({ status, onSetStatus, onRemove, large }: StatusControlProps) {
   const visited = status === 'visited'
+  const BUTTON = `${BASE} ${large ? 'h-12 rounded-xl text-[15px]' : 'h-11 rounded-[10px] text-sm'}`
   return (
-    <div role="group" aria-label="Status" className="grid grid-cols-3 gap-1.5">
+    <div role="group" aria-label="Status" className={`grid grid-cols-3 ${large ? 'gap-2' : 'gap-1.5'}`}>
       <button
         type="button"
         aria-pressed={visited}

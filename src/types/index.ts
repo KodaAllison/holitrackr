@@ -1,4 +1,4 @@
-export type { Country, CountryVisit, VisitedCountry } from './country.ts'
+export type { Country, CountryVisit, MapFilter, VisitedCountry } from './country.ts'
 export type {
   CountryIdentity,
   CountryVisitDto,

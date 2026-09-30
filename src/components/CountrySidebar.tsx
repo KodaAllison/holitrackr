@@ -6,6 +6,9 @@ import { countryKey } from '../lib/visitedCountries'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import CountryDetailPanel from './CountryDetailPanel'
 import CountryList from './CountryList'
+import MobileCountrySummary from './MobileCountrySummary'
+import MobileSheet from './MobileSheet'
+import { SHEET_PEEK } from '../lib/mobileSheet'
 
 type Status = VisitedCountry['status']
 
@@ -30,8 +33,9 @@ interface CountrySidebarProps {
 /**
  * The map's sidebar: the country list, or one country's detail panel. On
  * desktop it fills its container's height and the panel replaces the list
- * in place; on smaller screens the list stays and the panel opens as a
- * bottom sheet.
+ * in place. Below `lg` both live in a `MobileSheet` over the map: the list
+ * peeks, a selected country shows its `MobileCountrySummary`, and expanding
+ * that ("Edit journal") shows the full panel.
  */
 export default function CountrySidebar(props: CountrySidebarProps) {
   const { visitedCountries, selected, onSelect, onBack, onSetStatus, onSaveJournal, onRemove, onReset, loading, listAction } = props
@@ -41,6 +45,11 @@ export default function CountrySidebar(props: CountrySidebarProps) {
   const [tab, setTab] = useState<Status>('visited')
   const [sort, setSort] = useState<ListSort>('continent')
   const [returnKey, setReturnKey] = useState<string | undefined>(undefined)
+  // Mobile sheet: expanded or not, reset whenever the selection changes.
+  const selectedKey = selected ? countryKey(selected) : null
+  const [sheet, setSheet] = useState<{ key: string | null; expanded: boolean }>({ key: null, expanded: false })
+  const expanded = sheet.key === selectedKey && sheet.expanded
+  const setExpanded = (value: boolean) => setSheet({ key: selectedKey, expanded: value })
 
   const close = () => {
     if (selected) {
@@ -88,19 +97,25 @@ export default function CountrySidebar(props: CountrySidebarProps) {
     )
   }
 
+  if (selected) {
+    return (
+      <MobileSheet key={selectedKey} label={selected.name} expanded={expanded} onExpandedChange={setExpanded}>
+        {expanded ? detail : (
+          <MobileCountrySummary
+            country={selected}
+            onClose={close}
+            onSetStatus={status => onSetStatus(selected, status)}
+            onRemove={() => onRemove(selected)}
+            onEditJournal={() => setExpanded(true)}
+          />
+        )}
+      </MobileSheet>
+    )
+  }
+
   return (
-    <>
-      {/* The app shell's sheet provides the rounded edge and grab handle. */}
-      <aside aria-label="Your countries" className="h-[65dvh] min-h-[380px] overflow-hidden bg-white">{list}</aside>
-      {detail && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end">
-          <button type="button" aria-label="Close" className="absolute inset-0 bg-black/30" onClick={close} />
-          <div role="dialog" aria-label={selected.name} className="relative flex h-[80vh] max-h-[80vh] flex-col rounded-t-[20px] bg-white shadow-2xl">
-            <div aria-hidden="true" className="mx-auto mt-2 h-[5px] w-10 shrink-0 rounded-full bg-[#D7DEE5]" />
-            <div className="min-h-0 flex-1">{detail}</div>
-          </div>
-        </div>
-      )}
-    </>
+    <MobileSheet key="list" label="Your countries" expanded={expanded} onExpandedChange={setExpanded} collapsedHeight={SHEET_PEEK}>
+      {list}
+    </MobileSheet>
   )
 }

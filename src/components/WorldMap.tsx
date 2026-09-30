@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import type { Country, VisitedCountry } from '../types'
+import type { Country, MapFilter, VisitedCountry } from '../types'
 import { countryKey } from '../lib/visitedCountries'
 import type { IndexedCountry } from '../lib/mapEngine/countryIndex'
 import { useWorldCountries } from '../lib/mapEngine/useWorldCountries'
@@ -17,6 +17,7 @@ import MapSummaryChip from './MapSummaryChip'
 import MapOverlays, { type Pointed } from './MapOverlays'
 import MapViewToggle, { type MapView } from './MapViewToggle'
 import MorphMapSurface from './MorphMapSurface'
+import MobileMapControls from './MobileMapControls'
 
 interface WorldMapProps {
   visitedCountries: VisitedCountry[]
@@ -25,6 +26,9 @@ interface WorldMapProps {
   onOpenJournal?: (code: string, name: string) => void
   /** Bring this country to the front (e.g. after picking it in search). */
   focus?: { country: Country; seq: number; pulse?: boolean } | null
+  /** Which marked countries to colour in; both when omitted. */
+  mapFilter?: MapFilter
+  onMapFilterChange?: (filter: MapFilter) => void
 }
 
 /** Desktop gets the globe (or flat, by choice); smaller screens are always flat. */
@@ -32,8 +36,9 @@ const DESKTOP_QUERY = '(min-width: 1024px)'
 const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
 const SURFACE = 'relative w-full h-full select-none'
 const IDENTITY: ViewTransform = { k: 1, x: 0, y: 0 }
+const SHOW_ALL: MapFilter = { visited: true, bucketlist: true }
 
-export default function WorldMap({ visitedCountries, onCountryAction, onCountriesLoaded, onOpenJournal, focus }: WorldMapProps) {
+export default function WorldMap({ visitedCountries, onCountryAction, onCountriesLoaded, onOpenJournal, focus, mapFilter, onMapFilterChange }: WorldMapProps) {
   const desktop = useMediaQuery(DESKTOP_QUERY)
   const reducedMotion = useMediaQuery(REDUCED_QUERY)
   const cardRef = useRef<HTMLDivElement | null>(null)
@@ -53,7 +58,12 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
     () => new Map(visitedCountries.map(v => [countryKey(v), v.status] as const)),
     [visitedCountries]
   )
-  const statusOf = useCallback((c: IndexedCountry) => statusByKey.get(countryKey(c.identity)), [statusByKey])
+  const filter = mapFilter ?? SHOW_ALL
+  const { visited: showVisited, bucketlist: showBucket } = filter
+  const statusOf = useCallback((c: IndexedCountry) => {
+    const status = statusByKey.get(countryKey(c.identity))
+    return status && (status === 'visited' ? showVisited : showBucket) ? status : undefined
+  }, [statusByKey, showVisited, showBucket])
 
   const options: MapViewOptions = {
     countries,
@@ -61,7 +71,16 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
     hoveredKey: hovered ? countryKey(hovered.country) : null,
     selectedKey: popup ? countryKey(popup.country) : null,
     onHover: (c, x, y) => setHovered(c ? { country: c.identity, x, y } : null),
-    onPick: (c, x, y) => { setHovered(null); setPopup({ country: c.identity, x, y }) },
+    onPick: (c, x, y) => {
+      setHovered(null)
+      // Mobile: a marked country opens straight into the sheet; unmarked ones get the popup to mark them.
+      if (!desktop && onOpenJournal && statusByKey.has(countryKey(c.identity))) {
+        setPopup(null)
+        onOpenJournal(c.identity.code, c.identity.name)
+        return
+      }
+      setPopup({ country: c.identity, x, y })
+    },
     onMoveStart: () => setPopup(null),
   }
 
@@ -131,6 +150,7 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
         <FlatMapSurface
           options={{ ...options, fitOnOpen: true, viewRef: flatView }}
           className={SURFACE}
+          controls={desktop ? undefined : fit => <MobileMapControls onFit={fit} filter={filter} onFilterChange={onMapFilterChange} />}
         >
           {overlays}
         </FlatMapSurface>

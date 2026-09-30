@@ -68,11 +68,12 @@ export default function CountryList(props: CountryListProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 flex-col gap-3 px-5 pb-2 pt-4">
+      <div className="flex shrink-0 flex-col gap-3 px-5 pb-2 pt-1 lg:pt-4">
         <div className="flex items-center justify-between gap-2">
           <h2 className="truncate text-lg font-bold text-[#1E293B]">Your countries</h2>
           <div className="flex shrink-0 items-center gap-2">
-            {!empty && !loading && <SortMenu value={sort} onChange={onSortChange} />}
+            {/* The mobile sheet's header carries only the Timeline button. */}
+            {!empty && !loading && <div className="hidden lg:block"><SortMenu value={sort} onChange={onSortChange} /></div>}
             {action}
           </div>
         </div>
