@@ -5,7 +5,7 @@ import type { VisitedCountry } from '../../types'
 import { clusterAt, type Cluster } from './clusters'
 import { countryAt, type IndexedCountry } from './countryIndex'
 import { ease } from './globeMotion'
-import { CLUSTER_RADIUS, createHatch, drawMap, ShapeCache, type ViewTransform } from './renderer'
+import { CLUSTER_RADIUS, createHatch, drawMap, screenAnchor, ShapeCache, type ViewTransform } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
 import { flatFit, flatProjection, NO_INSET, type MapInset } from './views'
 
@@ -21,6 +21,12 @@ export interface MapViewOptions {
   onMoveStart: () => void
   /** Zoom back out to the whole world whenever this changes ("World view"). */
   worldViewSeq?: number
+  /**
+   * Called after every frame with the selected country's anchor in screen
+   * px, or null when nothing is selected or it can't be seen (for the name
+   * label, which follows the map without a React render per frame).
+   */
+  onSelectedAnchor?: (point: [number, number] | null) => void
 }
 
 export interface FlatMapOptions extends MapViewOptions {
@@ -70,6 +76,7 @@ export function useFlatMap(options: FlatMapOptions) {
       countries, statusOf: opts.statusOf,
       hoveredKey: opts.hoveredKey, selectedKey: opts.selectedKey, hatch: hatch.current,
     })
+    opts.onSelectedAnchor?.(screenAnchor(shapes, transform.current, countries, opts.selectedKey))
   }, [canvasRef, shapes, size])
 
   const requestDraw = useCallback(() => {

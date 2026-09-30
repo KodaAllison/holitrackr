@@ -5,7 +5,7 @@ import { countryKey } from '../visitedCountries'
 import { clusterAt, type Cluster } from './clusters'
 import { countryAt, type IndexedCountry } from './countryIndex'
 import { centerOf, decay, dragRotate, fitGlobe, turnTo, type LonLat, type Rotation } from './globeMotion'
-import { CLUSTER_RADIUS, createHatch, drawMap, ShapeCache } from './renderer'
+import { CLUSTER_RADIUS, createHatch, drawMap, screenAnchor, ShapeCache } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
 import type { MapViewOptions } from './useFlatMap'
 import { DEFAULT_GLOBE, globeRadius, type GlobeView } from './views'
@@ -112,14 +112,16 @@ export function useGlobeMap(options: GlobeMapOptions) {
     if (canvas && ctx && countries && size.width > 0) {
       hatch.current ??= createHatch(ctx)
       const projection = projectionFor(rotation.current)
+      const shapes = new ShapeCache(projection, centerOf(rotation.current), projectionFor(rotation.current, false))
       clusters.current = drawMap({
         ctx, ...size, dpr: window.devicePixelRatio || 1,
-        shapes: new ShapeCache(projection, centerOf(rotation.current), projectionFor(rotation.current, false)),
-        transform: IDENTITY,
+        shapes, transform: IDENTITY,
         countries, statusOf: opts.statusOf, rim: true,
         hoveredKey: opts.hoveredKey, selectedKey: opts.selectedKey, hatch: hatch.current,
       })
       moving = drawPulse(ctx, projection, now) || moving
+      // The detailed anchor, so the label doesn't jump when the frame at rest swaps shapes.
+      opts.onSelectedAnchor?.(screenAnchor(shapes, IDENTITY, opts.countries ?? countries, opts.selectedKey))
     }
 
     if (moving) {
