@@ -27,6 +27,8 @@ interface CountrySidebarProps {
   onReset?: () => void
   /** While the countries load, the list shows skeleton rows. */
   loading?: boolean
+  /** The countries could not be loaded (the map shows the error and Retry). */
+  loadFailed?: boolean
   /** Beside the list's heading (mobile: the Timeline button). */
   listAction?: ReactNode
   /** An unmarked country opened from the map (shown when nothing marked is selected). */
@@ -43,7 +45,7 @@ interface CountrySidebarProps {
  * that ("Edit journal") shows the full panel.
  */
 export default function CountrySidebar(props: CountrySidebarProps) {
-  const { visitedCountries, selected, onSelect, onBack, onSetStatus, onSaveJournal, onRemove, onReset, loading, listAction } = props
+  const { visitedCountries, selected, onSelect, onBack, onSetStatus, onSaveJournal, onRemove, onReset, loading, loadFailed, listAction } = props
   const { onAddVisit, onUpdateVisit, onRemoveVisit, picked, onMark } = props
   const desktop = useMediaQuery('(min-width: 1024px)')
   // List UI state lives here so it survives the detail panel replacing the list.
@@ -93,6 +95,7 @@ export default function CountrySidebar(props: CountrySidebarProps) {
       onReset={onReset}
       focusKey={returnKey}
       loading={loading}
+      loadFailed={loadFailed}
       action={listAction}
     />
   )

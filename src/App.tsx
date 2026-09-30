@@ -480,6 +480,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
               picked={pickedCountry}
               onMark={(country, status) => toggleCountry(country, status)}
               loading={loadingCountries}
+              loadFailed={loadFailed}
               onSelect={selectCountry}
               onBack={() => setSelected(null)}
               onSetStatus={(country, status) => toggleCountry(country, status)}
