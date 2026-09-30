@@ -35,6 +35,9 @@ export interface MapInset {
   left: number
 }
 
+/** Projected bounds `[[x0, y0], [x1, y1]]` in CSS px. */
+export type Bounds = [[number, number], [number, number]]
+
 export const NO_INSET: MapInset = { top: 0, right: 0, bottom: 0, left: 0 }
 
 /**
@@ -59,7 +62,7 @@ export function flatProjection({ width, height }: Size, inset: MapInset = NO_INS
  * [1, maxZoom].
  */
 export function flatFit(
-  [[x0, y0], [x1, y1]]: [[number, number], [number, number]],
+  [[x0, y0], [x1, y1]]: Bounds,
   { width, height }: Size,
   inset: MapInset,
   maxZoom: number,
@@ -71,6 +74,46 @@ export function flatFit(
   const cx = inset.left + w / 2
   const cy = inset.top + h / 2
   return { k, x: cx - k * (x0 + x1) / 2, y: cy - k * (y0 + y1) / 2 }
+}
+
+/** The union of projected bounds, or `null` for none. */
+export function unionBounds(boxes: Iterable<Bounds>): Bounds | null {
+  let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity]
+  for (const [[a, b], [c, d]] of boxes) {
+    x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d)
+  }
+  return x0 <= x1 && y0 <= y1 ? [[x0, y0], [x1, y1]] : null
+}
+
+/**
+ * Widen `bounds` about their centre to at least `minWidth` px across, so a
+ * fit to one small country still shows its neighbours (e.g. a continent).
+ */
+export function widenBounds([[x0, y0], [x1, y1]]: Bounds, minWidth: number): Bounds {
+  const grow = Math.max(0, minWidth - (x1 - x0)) / 2
+  return [[x0 - grow, y0], [x1 + grow, y1]]
+}
+
+/** Projected width (px at zoom 1) of `degrees` of longitude on a world `worldWidth` px wide. */
+export function spanWidth(worldWidth: number, degrees: number): number {
+  return worldWidth * Math.min(360, Math.max(0, degrees)) / 360
+}
+
+/**
+ * "Fit to my countries": the pan/zoom framing `boxes` (the marked
+ * countries' projected bounds) inside `inset`, never narrower than
+ * `minWidth` px at zoom 1; the whole world when there are none.
+ */
+export function frameMarked(
+  boxes: Iterable<Bounds>,
+  size: Size,
+  inset: MapInset,
+  maxZoom: number,
+  minWidth = 0,
+): ViewTransform {
+  const bounds = unionBounds(boxes)
+  if (!bounds) return { k: 1, x: 0, y: 0 }
+  return flatFit(widenBounds(bounds, minWidth), size, inset, maxZoom)
 }
 
 /** Where the flat map draws with a pan/zoom transform applied. */
