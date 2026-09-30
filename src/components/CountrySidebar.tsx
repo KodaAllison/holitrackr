@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from 'react'
-import type { VisitedCountry } from '../types'
+import type { Country, VisitedCountry } from '../types'
 import type { JournalValues } from '../lib/journal'
 import type { ListSort } from '../lib/countryListModel'
 import { countryKey } from '../lib/visitedCountries'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import CountryDetailPanel from './CountryDetailPanel'
 import CountryList from './CountryList'
+import CountryMarkPanel from './CountryMarkPanel'
 import MobileCountrySummary from './MobileCountrySummary'
 import MobileSheet from './MobileSheet'
 import { SHEET_PEEK } from '../lib/mobileSheet'
@@ -28,6 +29,10 @@ interface CountrySidebarProps {
   loading?: boolean
   /** Beside the list's heading (mobile: the Timeline button). */
   listAction?: ReactNode
+  /** An unmarked country opened from the map (shown when nothing marked is selected). */
+  picked?: Country | null
+  /** Mark the picked country. */
+  onMark?: (country: Country, status: Status) => void
 }
 
 /**
@@ -39,14 +44,15 @@ interface CountrySidebarProps {
  */
 export default function CountrySidebar(props: CountrySidebarProps) {
   const { visitedCountries, selected, onSelect, onBack, onSetStatus, onSaveJournal, onRemove, onReset, loading, listAction } = props
-  const { onAddVisit, onUpdateVisit, onRemoveVisit } = props
+  const { onAddVisit, onUpdateVisit, onRemoveVisit, picked, onMark } = props
   const desktop = useMediaQuery('(min-width: 1024px)')
   // List UI state lives here so it survives the detail panel replacing the list.
   const [tab, setTab] = useState<Status>('visited')
   const [sort, setSort] = useState<ListSort>('continent')
   const [returnKey, setReturnKey] = useState<string | undefined>(undefined)
   // Mobile sheet: expanded or not, reset whenever the selection changes.
-  const selectedKey = selected ? countryKey(selected) : null
+  const open = selected ?? picked ?? null
+  const selectedKey = open ? countryKey(open) : null
   const [sheet, setSheet] = useState<{ key: string | null; expanded: boolean }>({ key: null, expanded: false })
   const expanded = sheet.key === selectedKey && sheet.expanded
   const setExpanded = (value: boolean) => setSheet({ key: selectedKey, expanded: value })
@@ -60,7 +66,7 @@ export default function CountrySidebar(props: CountrySidebarProps) {
     onBack()
   }
 
-  const detail = selected && (
+  const detail = selected ? (
     <CountryDetailPanel
       key={countryKey(selected)}
       country={selected}
@@ -72,6 +78,8 @@ export default function CountrySidebar(props: CountrySidebarProps) {
       onUpdateVisit={onUpdateVisit}
       onRemoveVisit={onRemoveVisit}
     />
+  ) : picked && (
+    <CountryMarkPanel key={countryKey(picked)} country={picked} onBack={close} onMark={status => onMark?.(picked, status)} />
   )
   const list = (
     <CountryList
@@ -91,7 +99,7 @@ export default function CountrySidebar(props: CountrySidebarProps) {
 
   if (desktop) {
     return (
-      <aside aria-label={selected ? selected.name : 'Your countries'} className="flex h-full min-h-[420px] flex-col border-l border-[#D7DEE5] bg-white">
+      <aside aria-label={open ? open.name : 'Your countries'} className="flex h-full min-h-[420px] flex-col border-l border-[#D7DEE5] bg-white">
         {detail || list}
       </aside>
     )
@@ -109,6 +117,15 @@ export default function CountrySidebar(props: CountrySidebarProps) {
             onEditJournal={() => setExpanded(true)}
           />
         )}
+      </MobileSheet>
+    )
+  }
+
+  // An unmarked country tapped on the map: its mark panel, sized to fit.
+  if (picked) {
+    return (
+      <MobileSheet key={selectedKey} label={picked.name} expanded={expanded} onExpandedChange={setExpanded}>
+        {detail}
       </MobileSheet>
     )
   }

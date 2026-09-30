@@ -8,6 +8,10 @@ interface CountrySearchProps {
   onCountrySelect: (country: Country, status: 'visited' | 'bucketlist') => void
   /** Over the mobile map: white, shadowed, no "/" hint. Default: the app-bar field. */
   floating?: boolean
+  /** Inside the first-run welcome card: 48px, blue ring, "Where have you been?", no "/" hint. */
+  welcome?: boolean
+  /** While the countries load the app-bar field hides its "/" hint. */
+  loading?: boolean
 }
 
 const MAX_RESULTS = 10
@@ -17,15 +21,16 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 /** Search a country, then mark it Visited or Bucket list from the results. */
-export default function CountrySearch({ countries, visitedCountries, onCountrySelect, floating }: CountrySearchProps) {
+export default function CountrySearch({ countries, visitedCountries, onCountrySelect, floating, welcome, loading }: CountrySearchProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const inputRef = useRef<HTMLInputElement | null>(null)
   const query = searchTerm.trim().toLowerCase()
   const results = query ? countries.filter(c => c.name.toLowerCase().includes(query)).slice(0, MAX_RESULTS) : []
+  const inBar = !floating && !welcome
 
-  // "/" focuses the search from anywhere, as the hint in the field says.
+  // "/" focuses the app-bar search from anywhere, as the hint in the field says.
   useEffect(() => {
-    if (floating) return
+    if (!inBar) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return
       e.preventDefault()
@@ -33,7 +38,7 @@ export default function CountrySearch({ countries, visitedCountries, onCountrySe
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [floating])
+  }, [inBar])
 
   const handleSelect = (country: Country, status: 'visited' | 'bucketlist') => {
     onCountrySelect(country, status)
@@ -41,7 +46,7 @@ export default function CountrySearch({ countries, visitedCountries, onCountrySe
   }
 
   return (
-    <div className={`relative w-full ${floating ? '' : 'max-w-[460px]'}`}>
+    <div className={`relative w-full ${inBar ? 'max-w-[460px]' : ''}`}>
       <label className="relative block">
         <span className="sr-only">Search countries</span>
         <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6675" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -54,14 +59,16 @@ export default function CountrySearch({ countries, visitedCountries, onCountrySe
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
           onKeyDown={e => { if (e.key === 'Escape') { setSearchTerm(''); e.currentTarget.blur() } }}
-          placeholder={floating ? 'Search a country…' : 'Search a country to mark it…'}
-          className={`w-full pl-11 text-[#1E293B] placeholder:text-[#5B6675] focus:outline-none focus:ring-2 focus:ring-[#2563EB] ${
-            floating
-              ? 'h-[46px] pr-3.5 rounded-[14px] bg-white text-base shadow-[0_2px_8px_rgba(15,23,42,0.16)]'
-              : 'peer h-11 pr-14 rounded-xl border border-[#D7DEE5] bg-[#F7F9FB] text-[15px] focus:bg-white focus:border-transparent'
+          placeholder={welcome ? 'Where have you been?' : floating ? 'Search a country…' : 'Search a country to mark it…'}
+          className={`w-full pl-11 text-[#1E293B] placeholder:text-[#5B6675] focus:outline-none ${
+            welcome
+              ? 'h-12 pr-3.5 rounded-xl border-2 border-[#2563EB] bg-white text-base shadow-[0_0_0_4px_#DBEAFE]'
+              : floating
+                ? 'focus:ring-2 focus:ring-[#2563EB] h-[46px] pr-3.5 rounded-[14px] bg-white text-base shadow-[0_2px_8px_rgba(15,23,42,0.16)]'
+                : 'focus:ring-2 focus:ring-[#2563EB] peer h-11 pr-14 rounded-xl border border-[#D7DEE5] bg-[#F7F9FB] text-[15px] focus:bg-white focus:border-transparent'
           }`}
         />
-        {!floating && (
+        {inBar && !loading && (
           <kbd aria-hidden="true" className="absolute right-3 top-1/2 -translate-y-1/2 px-[7px] py-0.5 rounded-md border border-[#D7DEE5] bg-white text-xs font-sans text-[#5B6675] peer-focus:hidden">
             /
           </kbd>

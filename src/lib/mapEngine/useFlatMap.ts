@@ -7,7 +7,7 @@ import { countryAt, type IndexedCountry } from './countryIndex'
 import { ease } from './globeMotion'
 import { CLUSTER_RADIUS, createHatch, drawMap, ShapeCache, type ViewTransform } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
-import { flatProjection } from './views'
+import { flatFit, flatProjection, NO_INSET, type MapInset } from './views'
 
 type Status = VisitedCountry['status']
 
@@ -19,6 +19,8 @@ export interface MapViewOptions {
   onHover: (country: IndexedCountry | null, x: number, y: number) => void
   onPick: (country: IndexedCountry, x: number, y: number) => void
   onMoveStart: () => void
+  /** Zoom back out to the whole world whenever this changes ("World view"). */
+  worldViewSeq?: number
 }
 
 export interface FlatMapOptions extends MapViewOptions {
@@ -26,6 +28,8 @@ export interface FlatMapOptions extends MapViewOptions {
   fitOnOpen?: boolean
   /** Receives the current pan/zoom, for the flat → globe morph. */
   viewRef?: React.MutableRefObject<ViewTransform | null>
+  /** Keep the world (and "Fit to my countries") clear of floating UI, e.g. the mobile sheet. */
+  inset?: MapInset
 }
 
 const MAX_ZOOM = 12
@@ -47,7 +51,9 @@ export function useFlatMap(options: FlatMapOptions) {
   const hatch = useRef<CanvasPattern | null>(null)
   const zoomBehavior = useRef<ZoomBehavior<HTMLCanvasElement, unknown> | null>(null)
 
-  const projection = useMemo(() => flatProjection(size), [size])
+  const { top, right, bottom, left } = options.inset ?? NO_INSET
+  const inset = useMemo(() => ({ top, right, bottom, left }), [top, right, bottom, left])
+  const projection = useMemo(() => flatProjection(size, inset), [size, inset])
   const shapes = useMemo(() => new ShapeCache(projection), [projection])
 
   const draw = useCallback(() => {
@@ -88,8 +94,10 @@ export function useFlatMap(options: FlatMapOptions) {
     const behavior = d3zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([1, MAX_ZOOM])
       .extent([[0, 0], [size.width, size.height]])
-      .translateExtent([[0, 0], [size.width, size.height]])
-      .on('start', () => latest.current.onMoveStart())
+      // The inset lets the view pan the world into the clear area, not past it.
+      .translateExtent([[-inset.left, -inset.top], [size.width + inset.right, size.height + inset.bottom]])
+      // Only the user's own pans and zooms, not programmatic fits.
+      .on('start', event => { if (event.sourceEvent) latest.current.onMoveStart() })
       .on('zoom', event => {
         transform.current = event.transform
         if (latest.current.viewRef) latest.current.viewRef.current = event.transform
@@ -99,29 +107,15 @@ export function useFlatMap(options: FlatMapOptions) {
     selection.call(behavior).call(behavior.transform, zoomIdentity)
     zoomBehavior.current = behavior
     return () => { selection.on('.zoom', null) }
-  }, [canvasRef, size, requestDraw])
+  }, [canvasRef, size, inset, requestDraw])
 
   const fitAnim = useRef(0)
 
-  /** Pan/zoom to frame the marked countries (the whole world if none). */
-  const fitMine = useCallback(() => {
+  /** Animate the pan/zoom to `target` (instantly with reduced motion). */
+  const animateTo = useCallback((target: typeof zoomIdentity) => {
     const canvas = canvasRef.current
     const behavior = zoomBehavior.current
-    const { countries, statusOf } = latest.current
-    if (!canvas || !behavior || !countries || size.width === 0) return
-    const marked = countries.filter(c => statusOf(c))
-    let target = zoomIdentity
-    if (marked.length > 0) {
-      let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity]
-      for (const c of marked) {
-        const [[a, b], [cx, cy]] = shapes.bounds(c)
-        x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, cx); y1 = Math.max(y1, cy)
-      }
-      const k = Math.min(FIT_MAX_ZOOM, Math.max(1, 0.85 / Math.max((x1 - x0) / size.width, (y1 - y0) / size.height)))
-      target = zoomIdentity
-        .translate(size.width / 2 - k * (x0 + x1) / 2, size.height / 2 - k * (y0 + y1) / 2)
-        .scale(k)
-    }
+    if (!canvas || !behavior) return
     const selection = select(canvas)
     const from = transform.current
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
@@ -138,7 +132,42 @@ export function useFlatMap(options: FlatMapOptions) {
       if (u < 1) fitAnim.current = requestAnimationFrame(step)
     }
     fitAnim.current = requestAnimationFrame(step)
-  }, [canvasRef, shapes, size])
+  }, [canvasRef])
+
+  /** Pan/zoom to frame the marked countries (the whole world if none). */
+  const fitMine = useCallback(() => {
+    const { countries, statusOf } = latest.current
+    if (!countries || size.width === 0) return
+    const marked = countries.filter(c => statusOf(c))
+    let target = zoomIdentity
+    if (marked.length > 0) {
+      let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity]
+      for (const c of marked) {
+        const [[a, b], [cx, cy]] = shapes.bounds(c)
+        x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, cx); y1 = Math.max(y1, cy)
+      }
+      const fit = flatFit([[x0, y0], [x1, y1]], size, inset, FIT_MAX_ZOOM)
+      target = zoomIdentity.translate(fit.x, fit.y).scale(fit.k)
+    }
+    animateTo(target)
+  }, [animateTo, shapes, size, inset])
+
+  /** The +/- buttons: zoom about the centre, within the zoom limits. */
+  const zoomBy = useCallback((factor: number) => {
+    const canvas = canvasRef.current
+    const behavior = zoomBehavior.current
+    if (canvas && behavior) select(canvas).call(behavior.scaleBy, factor)
+  }, [canvasRef])
+
+  // "World view": back out to the whole map.
+  // Only a change after mount counts, not the value a remount starts with.
+  const worldViewSeq = options.worldViewSeq
+  const seenWorldView = useRef(worldViewSeq)
+  useEffect(() => {
+    if (worldViewSeq === seenWorldView.current) return
+    seenWorldView.current = worldViewSeq
+    animateTo(zoomIdentity)
+  }, [worldViewSeq, animateTo])
 
   // Fit once, when the view opens with data and a size.
   const fitted = useRef(false)
@@ -183,5 +212,5 @@ export function useFlatMap(options: FlatMapOptions) {
     if (canvas && behavior) select(canvas).call(behavior.scaleBy, 3, [hit.x, hit.y])
   }, [canvasRef, hitTest])
 
-  return { containerRef, canvasRef, fitMine, handlers: { onPointerMove, onPointerLeave, onClick } }
+  return { containerRef, canvasRef, fitMine, zoomBy, handlers: { onPointerMove, onPointerLeave, onClick } }
 }

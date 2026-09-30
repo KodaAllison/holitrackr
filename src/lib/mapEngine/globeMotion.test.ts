@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { centerOf, decay, dragRotate, ease, facing, MAX_TILT, turnTo, wrapLon } from './globeMotion'
+import { centerOf, decay, dragRotate, ease, facing, fitGlobe, MAX_TILT, turnTo, wrapLon } from './globeMotion'
 
 describe('wrapLon', () => {
   it('keeps longitudes in [-180, 180)', () => {
@@ -66,5 +66,29 @@ describe('turnTo', () => {
 
   it('takes longer for longer turns', () => {
     expect(turnTo([0, 0], [180, 0]).duration).toBeGreaterThan(turnTo([0, 0], [10, 0]).duration)
+  })
+})
+
+describe('fitGlobe', () => {
+  it('has nothing to frame without points', () => {
+    expect(fitGlobe([])).toBeNull()
+  })
+
+  it('centres on a single point at the closest zoom', () => {
+    const fit = fitGlobe([[12.5, 41.9]])
+    expect(fit?.center[0]).toBeCloseTo(12.5)
+    expect(fit?.center[1]).toBeCloseTo(41.9)
+    expect(fit?.zoom).toBe(4)
+  })
+
+  it('centres between nearby points and zooms so both fit', () => {
+    const fit = fitGlobe([[-20, 10], [40, 10]])
+    expect(fit?.center[0]).toBeCloseTo(10)
+    expect(fit?.zoom).toBeGreaterThan(1)
+    expect(fit?.zoom).toBeLessThan(4)
+  })
+
+  it('stays zoomed out when the points span a hemisphere', () => {
+    expect(fitGlobe([[-100, 40], [140, -30], [20, 0]])?.zoom).toBe(1)
   })
 })
