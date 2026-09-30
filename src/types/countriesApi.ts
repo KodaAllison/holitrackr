@@ -41,7 +41,7 @@ export type CreateCountryParseResult =
   | { success: true; value: CreateCountryInput }
   | { success: false; error: 'Invalid payload' | 'Invalid status' }
 
-/** A `country_visits` row as the API selects it (`visit_date` via to_char, `YYYY-MM-DD`). */
+/** A `country_visits` row as the API selects it (`visit_date` via ::text, `YYYY-MM-DD`). */
 export interface CountryVisitRow {
   id: number
   country_code: string

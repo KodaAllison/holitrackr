@@ -34,14 +34,16 @@ export interface CountriesDatabase {
   query<Row extends QueryResultRow>(statement: string, parameters: unknown[]): Promise<{ rows: Row[] }>
 }
 
-// to_char keeps DATE as `YYYY-MM-DD` text; pg drivers would otherwise return a JS Date.
+// visit_date::text keeps the value as `YYYY-MM-DD` text: pg drivers would
+// otherwise return a JS Date, and ::text (unlike to_char) also works if a
+// deployment's column was ever created as TEXT.
 const LIST_COUNTRIES_SQL = `SELECT country_code, country_name, status, notes, place,
-       to_char(visit_date, 'YYYY-MM-DD') AS visit_date, rating, tags
+       visit_date::text AS visit_date, rating, tags
 FROM visited_countries
 WHERE user_id = $1
 ORDER BY visited_countries.visit_date DESC NULLS LAST, created_at DESC`
 
-const VISIT_COLUMNS = `id, country_code, country_name, to_char(visit_date, 'YYYY-MM-DD') AS visit_date,
+const VISIT_COLUMNS = `id, country_code, country_name, visit_date::text AS visit_date,
        place, rating, notes, tags`
 
 const LIST_VISITS_SQL = `SELECT ${VISIT_COLUMNS}
