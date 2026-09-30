@@ -11,6 +11,7 @@ import { useMediaQuery } from '../lib/useMediaQuery'
 import FlatMapSurface from './FlatMapSurface'
 import GlobeMapSurface from './GlobeMapSurface'
 import IntroMapSurface from './IntroMapSurface'
+import { atlasProgress } from '../lib/atlasProgress'
 import MapLegend from './MapLegend'
 import MapSummaryChip from './MapSummaryChip'
 import MapOverlays, { type Pointed } from './MapOverlays'
@@ -29,7 +30,7 @@ interface WorldMapProps {
 /** Desktop gets the globe (or flat, by choice); smaller screens are always flat. */
 const DESKTOP_QUERY = '(min-width: 1024px)'
 const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
-const SURFACE = 'relative w-full select-none'
+const SURFACE = 'relative w-full h-full select-none'
 const IDENTITY: ViewTransform = { k: 1, x: 0, y: 0 }
 
 export default function WorldMap({ visitedCountries, onCountryAction, onCountriesLoaded, onOpenJournal, focus }: WorldMapProps) {
@@ -40,7 +41,6 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
   const [hovered, setHovered] = useState<Pointed | null>(null)
   const [popup, setPopup] = useState<Pointed | null>(null)
   const [preferred, setPreferred] = useState<MapView>(readMapView)
-  const [legendOpen, setLegendOpen] = useState(false)
   const [morph, setMorph] = useState<{ to: MapView; globe: GlobeView; flat: ViewTransform } | null>(null)
   const globeView = useRef<GlobeView | null>(null)
   const flatView = useRef<ViewTransform | null>(null)
@@ -53,7 +53,6 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
     () => new Map(visitedCountries.map(v => [countryKey(v), v.status] as const)),
     [visitedCountries]
   )
-  const visitedCount = visitedCountries.filter(v => v.status === 'visited').length
   const statusOf = useCallback((c: IndexedCountry) => statusByKey.get(countryKey(c.identity)), [statusByKey])
 
   const options: MapViewOptions = {
@@ -103,13 +102,13 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
   )
 
   return (
-    <div ref={cardRef} className="relative bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
+    <div ref={cardRef} className="relative h-full overflow-hidden bg-[#EEF2F6]">
       {showIntro ? (
         <IntroMapSurface
           countries={motionCountries ?? countries}
           statusOf={statusOf}
           onDone={finishIntro}
-          className={`${SURFACE} h-[420px]`}
+          className={SURFACE}
         />
       ) : morph && (motionCountries ?? countries) ? (
         <MorphMapSurface
@@ -119,32 +118,33 @@ export default function WorldMap({ visitedCountries, onCountryAction, onCountrie
           countries={motionCountries ?? countries ?? []}
           statusOf={statusOf}
           onDone={() => setMorph(null)}
-          className={`${SURFACE} h-[420px]`}
+          className={SURFACE}
         />
       ) : view === 'globe' ? (
         <GlobeMapSurface
           options={{ ...options, motionCountries, focus, initialView: savedGlobe.current, viewRef: globeView }}
-          className={`${SURFACE} h-[420px] bg-gradient-to-b from-white to-gray-50`}
+          className={SURFACE}
         >
           {overlays}
         </GlobeMapSurface>
       ) : (
         <FlatMapSurface
           options={{ ...options, fitOnOpen: true, viewRef: flatView }}
-          className={`${SURFACE} aspect-[2/1] sm:aspect-auto sm:h-[420px]`}
+          className={SURFACE}
         >
           {overlays}
         </FlatMapSurface>
       )}
-      {desktop && !showIntro && <MapViewToggle view={morph ? morph.to : preferred} disabled={morph !== null} onChange={switchView} />}
       {!showIntro && (
-        <MapSummaryChip
-          visitedCount={visitedCount}
-          legendOpen={legendOpen}
-          onToggleLegend={() => setLegendOpen(open => !open)}
-        />
+        <>
+          {/* Desktop: Globe / Flat and the summary, top-left. Mobile: the chip places itself under the search. */}
+          <div className="lg:absolute lg:top-5 lg:left-5 lg:z-10 flex items-center gap-2">
+            {desktop && <MapViewToggle view={morph ? morph.to : preferred} disabled={morph !== null} onChange={switchView} />}
+            <MapSummaryChip progress={atlasProgress(visitedCountries)} />
+          </div>
+          <MapLegend />
+        </>
       )}
-      <MapLegend visitedCount={visitedCount} open={legendOpen && !showIntro} />
     </div>
   )
 }

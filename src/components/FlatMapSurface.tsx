@@ -16,7 +16,7 @@ export default function FlatMapSurface({ options, className, children }: FlatMap
       <button
         type="button"
         onClick={fitMine}
-        className="absolute top-3 right-3 z-10 h-8 px-3 bg-white rounded-lg shadow-md border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+        className="absolute top-[120px] right-4 lg:top-auto lg:bottom-5 lg:right-5 z-10 h-9 lg:h-11 px-3 lg:px-4 bg-white rounded-full lg:rounded-xl shadow-[0_1px_3px_rgba(15,23,42,0.14)] text-[13px] font-semibold text-[#1E293B] hover:bg-[#F7F9FB]"
       >
         Fit my countries
       </button>

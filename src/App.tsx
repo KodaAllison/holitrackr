@@ -1,9 +1,11 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
 import type { Country, VisitedCountry } from './types'
 import WorldMap from './components/WorldMap'
-import Header from './components/Header'
-import Footer from './components/Footer'
-import Stats from './components/Stats'
+import AppBar from './components/AppBar'
+import type { AppView } from './components/ViewSwitch'
+import UserMenu from './components/UserMenu'
+import LoadingScreen from './components/LoadingScreen'
+import TimelineButton from './components/TimelineButton'
 import CountrySearch from './components/CountrySearch'
 import CountrySidebar from './components/CountrySidebar'
 import Toast from './components/Toast'
@@ -14,12 +16,13 @@ import TripTimeline from './components/TripTimeline'
 import CountryDetailModal from './components/CountryDetailModal'
 import SignInScreen from './components/SignInScreen'
 import { useSession } from './lib/auth-client'
+import { useMediaQuery } from './lib/useMediaQuery'
 import {
   httpCountriesClient,
   type CountriesClient,
   type CountryJournalUpdates,
 } from './lib/countriesClient'
-import { sameCountry, findCountry, withStatus, nextVisitedState } from './lib/visitedCountries'
+import { sameCountry, findCountry, nextVisitedState } from './lib/visitedCountries'
 
 const STORAGE_KEY_PREFIX = 'myatlas-visited-countries'
 const LEGACY_STORAGE_KEY_PREFIX = 'holitrackr-visited-countries'
@@ -91,7 +94,8 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   const [visitedCountries, setVisitedCountries] = useState<VisitedCountry[]>([])
   const [countries, setCountries] = useState<Country[]>([])
   const [sessionCheckTimedOut, setSessionCheckTimedOut] = useState(false)
-  const [activeView, setActiveView] = useState<'map' | 'timeline'>('map')
+  const [activeView, setActiveView] = useState<AppView>('map')
+  const desktop = useMediaQuery('(min-width: 1024px)')
   const [journalCountry, setJournalCountry] = useState<VisitedCountry | null>(null)
   const [mapFocus, setMapFocus] = useState<{ country: Country; seq: number; pulse?: boolean } | null>(null)
   const [milestone, setMilestone] = useState<Milestone | null>(null)
@@ -328,25 +332,30 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   }, [isPending])
 
   // Show loading state while checking authentication
-  if (isPending && !sessionCheckTimedOut) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
-        </div>
-      </div>
-    )
-  }
+  if (isPending && !sessionCheckTimedOut) return <LoadingScreen />
 
   // Signed out: the atlas-plate sign-in screen
   if (!session) {
     return <SignInScreen timedOut={sessionCheckTimedOut} />
   }
 
-  // Show main app if logged in
+  const user = { name: session.user.name, email: session.user.email }
+  const search = (floating: boolean) => (
+    <CountrySearch
+      floating={floating}
+      countries={countries}
+      visitedCountries={visitedCountries}
+      onCountrySelect={(country, status) => {
+        if (!toggleCountry(country, status)) focusMap(country)
+      }}
+    />
+  )
+  // Mobile map view has no bar: search and account float over the map instead.
+  const showBar = desktop || activeView === 'timeline'
+
+  // Signed in: app bar, then the map with the country panel, or the timeline.
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-[100dvh] lg:h-[100dvh] flex flex-col bg-[#DCE6EE] text-[#1E293B]">
       {journalCountry && (
         <CountryDetailModal
           country={journalCountry}
@@ -360,86 +369,60 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
       {milestone && (
         <Toast message={milestoneMessage(milestone)} tone="celebrate" offset={removed ? 1 : 0} onDismiss={dismissMilestone} />
       )}
-      <Header user={{ name: session.user.name, email: session.user.email }} />
-
-      <Stats
-        visitedCount={withStatus(visitedCountries, 'visited').length}
-        bucketListCount={withStatus(visitedCountries, 'bucketlist').length}
-      />
-
-      {/* View toggle + search */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 container mx-auto max-w-6xl">
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden bg-white shadow-sm shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveView('map')}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeView === 'map'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            Map
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView('timeline')}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeView === 'timeline'
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            Timeline
-          </button>
-        </div>
-
-        {activeView === 'map' && (
-          <CountrySearch
-            countries={countries}
-            visitedCountries={visitedCountries}
-            onCountrySelect={(country, status) => {
-              if (!toggleCountry(country, status)) focusMap(country)
-            }}
-          />
-        )}
-      </div>
+      {showBar && (
+        <AppBar
+          view={activeView}
+          onViewChange={setActiveView}
+          search={activeView === 'map' && search(false)}
+          account={<UserMenu user={user} />}
+        />
+      )}
 
       {activeView === 'map' ? (
-        <div className="container mx-auto px-4 max-w-6xl">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-            <div className="lg:col-span-2">
-              <WorldMap
-                visitedCountries={visitedCountries}
-                onCountryAction={(code, name, status) => toggleCountry({ code, name }, status)}
-                onCountriesLoaded={setCountries}
-                onOpenJournal={openJournal}
-                focus={mapFocus}
-              />
-            </div>
-            <div className="mb-4">
-              <CountrySidebar
-                visitedCountries={visitedCountries}
-                selected={selectedCountry}
-                onSelect={selectCountry}
-                onBack={() => setSelected(null)}
-                onSetStatus={(country, status) => toggleCountry(country, status)}
-                onSaveJournal={updateCountryJournal}
-                onRemove={removeCountry}
-                onAddVisit={(country, values) => { void addVisit(country, values) }}
-                onUpdateVisit={(id, values) => { void updateVisit(id, values) }}
-                onRemoveVisit={id => { void removeVisit(id) }}
-                onReset={resetVisitedCountries}
-              />
-            </div>
-          </div>
-        </div>
+        <main className="flex-1 min-h-0 flex flex-col lg:flex-row">
+          <section aria-label="World map" className="relative h-[62dvh] min-h-[360px] lg:h-auto lg:min-h-0 lg:flex-1 min-w-0">
+            <WorldMap
+              visitedCountries={visitedCountries}
+              onCountryAction={(code, name, status) => toggleCountry({ code, name }, status)}
+              onCountriesLoaded={setCountries}
+              onOpenJournal={openJournal}
+              focus={mapFocus}
+            />
+            {!desktop && (
+              <div className="absolute top-4 inset-x-4 z-20 flex gap-2">
+                <div className="flex-1 min-w-0">{search(true)}</div>
+                <UserMenu user={user} floating />
+              </div>
+            )}
+          </section>
+          <aside
+            aria-label="Your countries"
+            className="relative z-10 -mt-5 pt-2 rounded-t-[20px] bg-white shadow-[0_-8px_30px_rgba(15,23,42,0.16)] lg:mt-0 lg:pt-0 lg:w-[360px] lg:shrink-0 lg:rounded-none lg:shadow-none lg:border-l lg:border-[#D7DEE5]"
+          >
+            <div aria-hidden="true" className="lg:hidden mx-auto h-[5px] w-10 rounded-full bg-[#C7D0D9]" />
+            <CountrySidebar
+              visitedCountries={visitedCountries}
+              selected={selectedCountry}
+              onSelect={selectCountry}
+              onBack={() => setSelected(null)}
+              onSetStatus={(country, status) => toggleCountry(country, status)}
+              onSaveJournal={updateCountryJournal}
+              onRemove={removeCountry}
+              onAddVisit={(country, values) => { void addVisit(country, values) }}
+              onUpdateVisit={(id, values) => { void updateVisit(id, values) }}
+              onRemoveVisit={id => { void removeVisit(id) }}
+              onReset={resetVisitedCountries}
+              listAction={!desktop && <TimelineButton onClick={() => setActiveView('timeline')} />}
+            />
+          </aside>
+        </main>
       ) : (
-        <div className="container mx-auto max-w-6xl">
-          <TripTimeline visitedCountries={visitedCountries} onOpenJournal={setJournalCountry} />
-        </div>
+        <main className="flex-1 min-h-0 overflow-y-auto bg-[#F8FAFC]">
+          <div className="mx-auto max-w-7xl">
+            <TripTimeline visitedCountries={visitedCountries} onOpenJournal={setJournalCountry} />
+          </div>
+        </main>
       )}
-      <Footer />
     </div>
   )
 }
