@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
-import type { Country, VisitedCountry } from './types'
+import type { Country, MapFilter, VisitedCountry } from './types'
 import WorldMap from './components/WorldMap'
 import AppBar from './components/AppBar'
 import type { AppView } from './components/ViewSwitch'
@@ -9,6 +9,8 @@ import TimelineButton from './components/TimelineButton'
 import CountrySearch from './components/CountrySearch'
 import CountrySidebar from './components/CountrySidebar'
 import Toast from './components/Toast'
+import ErrorToast from './components/ErrorToast'
+import MobileBackButton from './components/MobileBackButton'
 import { detectMilestone, markMilestoneSeen, milestoneMessage, seenMilestones, type Milestone } from './lib/milestones'
 import { journalValuesOf, type JournalValues } from './lib/journal'
 import { isPendingVisit, toVisit, visitValuesOf, withVisitAdded, withVisitRemoved, withVisitReplaced } from './lib/countryVisits'
@@ -102,6 +104,11 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   const dismissMilestone = useCallback(() => setMilestone(null), [])
   const [selected, setSelected] = useState<Country | null>(null)
   const [removed, setRemoved] = useState<VisitedCountry | null>(null)
+  // Which marked countries the map colours in (mobile: the Map filters popover).
+  const [mapFilter, setMapFilter] = useState<MapFilter>({ visited: true, bucketlist: true })
+  // A failed mark / remove, reverted by the refetch, with a way to try again.
+  const [saveError, setSaveError] = useState<{ message: string; retry: () => void } | null>(null)
+  const dismissSaveError = useCallback(() => setSaveError(null), [])
   // Derived: the selection disappears if the country is removed.
   const selectedCountry = selected ? findCountry(visitedCountries, selected) ?? null : null
 
@@ -265,6 +272,10 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
         } catch (err) {
           console.warn('Failed to persist visited country:', err)
           await refreshCountries()
+          setSaveError({
+            message: `Couldn't save ${country.name}. Undone.`,
+            retry: () => { setSaveError(null); toggleCountry(country, explicitStatus) },
+          })
         }
       })()
 
@@ -280,7 +291,12 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     // would otherwise wipe the restored row.
     pendingRemoval.current = countriesClient.remove(country).catch(async (err) => {
       console.warn('Failed to remove country:', err)
+      setRemoved(prev => (prev && sameCountry(prev, country) ? null : prev))
       await refreshCountries()
+      setSaveError({
+        message: `Couldn't remove ${country.name}. Undone.`,
+        retry: () => { setSaveError(null); removeCountry(country) },
+      })
     })
   }
 
@@ -366,6 +382,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
       {removed && (
         <Toast message={`Removed ${removed.name}`} action={{ label: 'Undo', onClick: () => { void undoRemove() } }} onDismiss={dismissUndo} />
       )}
+      {saveError && <ErrorToast message={saveError.message} onRetry={saveError.retry} onDismiss={dismissSaveError} />}
       {milestone && (
         <Toast message={milestoneMessage(milestone)} tone="celebrate" offset={removed ? 1 : 0} onDismiss={dismissMilestone} />
       )}
@@ -379,25 +396,29 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
       )}
 
       {activeView === 'map' ? (
-        <main className="flex-1 min-h-0 flex flex-col lg:flex-row">
-          <section aria-label="World map" className="relative h-[62dvh] min-h-[360px] lg:h-auto lg:min-h-0 lg:flex-1 min-w-0">
+        // Below lg the map fills the screen and the country sheet overlays it.
+        <main className="relative h-[100dvh] overflow-hidden lg:h-auto lg:overflow-visible flex-1 min-h-0 flex flex-col lg:flex-row">
+          <section aria-label="World map" className="absolute inset-0 lg:relative lg:inset-auto lg:h-auto lg:min-h-0 lg:flex-1 min-w-0">
             <WorldMap
               visitedCountries={visitedCountries}
               onCountryAction={(code, name, status) => toggleCountry({ code, name }, status)}
               onCountriesLoaded={setCountries}
               onOpenJournal={openJournal}
               focus={mapFocus}
+              mapFilter={mapFilter}
+              onMapFilterChange={setMapFilter}
             />
             {!desktop && (
+              // A selected country swaps the avatar for a back button before the search.
               <div className="absolute top-4 inset-x-4 z-20 flex gap-2">
+                {selectedCountry && <MobileBackButton onClick={() => setSelected(null)} />}
                 <div className="flex-1 min-w-0">{search(true)}</div>
-                <UserMenu user={user} floating />
+                {!selectedCountry && <UserMenu user={user} floating />}
               </div>
             )}
           </section>
-          {/* CountrySidebar renders the <aside> landmark and, on desktop, its left border. */}
-          <div className="relative z-10 -mt-5 pt-2 rounded-t-[20px] bg-white shadow-[0_-8px_30px_rgba(15,23,42,0.16)] lg:mt-0 lg:pt-0 lg:w-[360px] lg:shrink-0 lg:rounded-none lg:shadow-none">
-            <div aria-hidden="true" className="lg:hidden mx-auto h-[5px] w-10 rounded-full bg-[#C7D0D9]" />
+          {/* CountrySidebar renders the <aside> landmark on desktop, or its own MobileSheet below lg. */}
+          <div className="lg:relative lg:z-10 lg:w-[360px] lg:shrink-0 lg:bg-white">
             <CountrySidebar
               visitedCountries={visitedCountries}
               selected={selectedCountry}

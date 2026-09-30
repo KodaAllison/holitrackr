@@ -36,3 +36,9 @@ export interface CountryVisit {
   notes?: string
   tags?: string[]
 }
+
+/** Which marked countries the map colours in (the rest draw as unmarked). */
+export interface MapFilter {
+  visited: boolean
+  bucketlist: boolean
+}
