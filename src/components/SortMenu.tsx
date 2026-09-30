@@ -38,9 +38,10 @@ export default function SortMenu({ value, onChange }: SortMenuProps) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(o => !o)}
-        className="flex h-9 items-center gap-1.5 rounded-lg border border-[#D7DEE5] bg-white px-2.5 text-[13px] text-[#334155] hover:bg-[#F7F9FB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+        className="flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[#D7DEE5] bg-white px-2.5 text-[13px] text-[#334155] hover:bg-[#F7F9FB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
       >
-        Sort: {label}
+        {/* Narrow sheets (beside the mobile Timeline button) drop the visible prefix. */}
+        <span className="sr-only sm:not-sr-only">Sort: </span>{label}
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B6675" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
       </button>
       {open && (

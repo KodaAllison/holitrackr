@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { VisitedCountry } from '../types'
 import type { JournalValues } from '../lib/journal'
 import type { ListSort } from '../lib/countryListModel'
@@ -23,6 +23,8 @@ interface CountrySidebarProps {
   onReset?: () => void
   /** While the countries load, the list shows skeleton rows. */
   loading?: boolean
+  /** Beside the list's heading (mobile: the Timeline button). */
+  listAction?: ReactNode
 }
 
 /**
@@ -32,7 +34,7 @@ interface CountrySidebarProps {
  * bottom sheet.
  */
 export default function CountrySidebar(props: CountrySidebarProps) {
-  const { visitedCountries, selected, onSelect, onBack, onSetStatus, onSaveJournal, onRemove, onReset, loading } = props
+  const { visitedCountries, selected, onSelect, onBack, onSetStatus, onSaveJournal, onRemove, onReset, loading, listAction } = props
   const { onAddVisit, onUpdateVisit, onRemoveVisit } = props
   const desktop = useMediaQuery('(min-width: 1024px)')
   // List UI state lives here so it survives the detail panel replacing the list.
@@ -74,6 +76,7 @@ export default function CountrySidebar(props: CountrySidebarProps) {
       onReset={onReset}
       focusKey={returnKey}
       loading={loading}
+      action={listAction}
     />
   )
 
@@ -87,7 +90,8 @@ export default function CountrySidebar(props: CountrySidebarProps) {
 
   return (
     <>
-      <div className="h-[420px] overflow-hidden rounded-xl border border-[#D7DEE5] bg-white">{list}</div>
+      {/* The app shell's sheet provides the rounded edge and grab handle. */}
+      <aside aria-label="Your countries" className="h-[65dvh] min-h-[380px] overflow-hidden bg-white">{list}</aside>
       {detail && (
         <div className="fixed inset-0 z-40 flex flex-col justify-end">
           <button type="button" aria-label="Close" className="absolute inset-0 bg-black/30" onClick={close} />

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import type { VisitedCountry } from '../types'
 import { groupCountries, type ListSort } from '../lib/countryListModel'
 import { countryKey, withStatus } from '../lib/visitedCountries'
@@ -22,6 +22,8 @@ interface CountryListProps {
   /** Row to focus on mount, e.g. the country whose detail just closed. */
   focusKey?: string
   loading?: boolean
+  /** Beside the heading, e.g. the mobile Timeline button. */
+  action?: ReactNode
 }
 
 /** Up/Down move between rows, like a list box, without trapping Tab. */
@@ -44,7 +46,7 @@ const HEADING = 'flex justify-between px-2 pb-1 text-xs font-semibold uppercase 
  * tabs with counts, and rows grouped by continent (or flat by date / name).
  */
 export default function CountryList(props: CountryListProps) {
-  const { visitedCountries, tab, onTabChange, sort, onSortChange, onSelect, onSetStatus, onReset, focusKey, loading } = props
+  const { visitedCountries, tab, onTabChange, sort, onSortChange, onSelect, onSetStatus, onReset, focusKey, loading, action } = props
   const panel = useRef<HTMLDivElement>(null)
   const visited = withStatus(visitedCountries, 'visited')
   const bucket = withStatus(visitedCountries, 'bucketlist')
@@ -67,9 +69,12 @@ export default function CountryList(props: CountryListProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-col gap-3 px-5 pb-2 pt-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-[#1E293B]">Your countries</h2>
-          {!empty && !loading && <SortMenu value={sort} onChange={onSortChange} />}
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="truncate text-lg font-bold text-[#1E293B]">Your countries</h2>
+          <div className="flex shrink-0 items-center gap-2">
+            {!empty && !loading && <SortMenu value={sort} onChange={onSortChange} />}
+            {action}
+          </div>
         </div>
         {!empty && !loading && (
           <div role="tablist" aria-label="Country lists" className="grid grid-cols-2 gap-1 rounded-[10px] bg-[#EEF2F6] p-1">

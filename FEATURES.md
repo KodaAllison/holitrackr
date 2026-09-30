@@ -249,8 +249,14 @@ source pinned to a commit:
   animates the globe unrolling into the flat map and back. The choice is
   remembered per user (default Globe). Flat view has pan/zoom and opens on
   "fit my countries". Both views share selection, hover, tooltip and styling.
-- **Map chrome** *(done: chip + legend toggle + tooltip)*:
-  - Summary chip: "17 of 195 countries"; Show legend.
+- **Map chrome** *(done: chip + legend + tooltip)*:
+  - Summary chip: progress bar, "17 of 195 countries", "5 of 7 continents"
+    (mobile: count + colour key); a Visited / Bucket list key bottom-left.
+- **App shell** *(done)*: a 64px white bar (MyAtlas, Map / Timeline, search
+  with a "/" shortcut, avatar menu) over a full-height map + 360px sidebar.
+  The old blue header, four-number stats banner and footer are gone; the
+  bucket-list count lives on the sidebar tab. Mobile: search + avatar float
+  over the map, the list is a sheet below with a Timeline button.
   - Palette: visited `#0B7A53`, bucket list amber hatch `#F2B24E`/`#C27A0A`,
     land `#F7F8F9`, ocean `#DCE6EE`, borders `#B4C0CC`, action blue
     `#2563EB`. This is a deliberate extension of the blue-600 / gray-50
