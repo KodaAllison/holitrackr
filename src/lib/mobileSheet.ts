@@ -11,6 +11,8 @@ import { formatVisitMonth, monthName, parseVisitMonth } from './visitDate'
 export const SHEET_PEEK = 256
 /** Space kept above the expanded sheet, so the floating search stays usable (16 + 46 + 26). */
 export const SHEET_TOP_GAP = 88
+/** CSS variable on <html> holding the mounted sheet's current height, e.g. `312px`. */
+export const SHEET_HEIGHT_VAR = '--sheet-height'
 /** Movement under this many px is a tap on the handle, not a drag. */
 export const TAP_SLOP = 6
 /** A flick faster than this (px/ms) snaps in its direction, whatever the distance. */
