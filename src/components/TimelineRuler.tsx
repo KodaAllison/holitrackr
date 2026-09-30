@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { nearestTrip, tripAtOrBefore, type TimelineModel } from '../lib/timelineModel'
+import { nearestTrip, tripAtOrBefore, tripKey, type TimelineModel } from '../lib/timelineModel'
 import { formatVisitMonth } from '../lib/visitDate'
 import { useElementWidth } from '../lib/useElementWidth'
 
@@ -84,7 +84,7 @@ export default function TimelineRuler({ model, active, playing, onChange, onTogg
             aria-valuemin={0}
             aria-valuemax={Math.max(0, trips.length - 1)}
             aria-valuenow={active}
-            aria-valuetext={current ? `${current.country.name}, ${formatVisitMonth(current.country.visitedAt)}` : 'No trips'}
+            aria-valuetext={current ? `${current.country.name}, ${formatVisitMonth(current.journal.visitedAt)}` : 'No trips'}
             className="block touch-none select-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
             onKeyDown={onKeyDown}
             onPointerDown={e => { dragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); scrubTo(e.clientX, e.currentTarget) }}
@@ -121,11 +121,11 @@ export default function TimelineRuler({ model, active, playing, onChange, onTogg
               <text x={width - PAD} y={12} fontSize={9} fill="#9A5B00" textAnchor="end">Next</text>
             )}
             {trips.map((t, i) => (
-              <circle key={`${t.country.code}-${t.country.name}`} cx={x(t.at + 0.5)} cy={BASE} r={i <= active ? 4 : 3}
+              <circle key={tripKey(t)} cx={x(t.at + 0.5)} cy={BASE} r={i <= active ? 4 : 3}
                 fill={i <= active ? '#0B7A53' : '#FFFFFF'} stroke="#0B7A53" strokeWidth={1.2} />
             ))}
             {planned.map(t => (
-              <circle key={`p-${t.country.code}-${t.country.name}`} cx={x(t.at + 0.5)} cy={BASE} r={3.5}
+              <circle key={`p-${tripKey(t)}`} cx={x(t.at + 0.5)} cy={BASE} r={3.5}
                 fill="#F2B24E" stroke="#9A5B00" strokeWidth={1} />
             ))}
             {current && (

@@ -1,4 +1,4 @@
-import type { VisitedCountry } from './country'
+import type { CountryVisit, VisitedCountry } from './country'
 
 export interface StoredCountryRow {
   country_code: string
@@ -40,3 +40,39 @@ export type VisitedCountryDto = VisitedCountry
 export type CreateCountryParseResult =
   | { success: true; value: CreateCountryInput }
   | { success: false; error: 'Invalid payload' | 'Invalid status' }
+
+/** A `country_visits` row as the API selects it (`visit_date` via to_char, `YYYY-MM-DD`). */
+export interface CountryVisitRow {
+  id: number
+  country_code: string
+  country_name: string
+  visit_date: string
+  place: string | null
+  rating: number | null
+  notes: string | null
+  tags: string | null
+}
+
+/** JSON representation of one extra visit. */
+export type CountryVisitDto = CountryVisit
+
+/** Validated body of POST /api/countries/visits. */
+export interface CreateVisitInput extends CountryIdentity {
+  /** `YYYY-MM-01` */
+  visitDate: string
+  place: string | null
+  rating: number | null
+  notes: string | null
+  /** JSON array text, as stored. */
+  tags: string | null
+}
+
+/** Validated body of PATCH /api/countries/visits. */
+export interface UpdateVisitInput {
+  id: number
+  visitDate: string
+  place: string | null
+  rating: number | null
+  notes: string | null
+  tags: string | null
+}

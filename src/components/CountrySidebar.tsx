@@ -15,6 +15,9 @@ interface CountrySidebarProps {
   onSetStatus: (country: VisitedCountry, status: Status) => void
   onSaveJournal: (country: VisitedCountry, values: JournalValues) => void
   onRemove: (country: VisitedCountry) => void
+  onAddVisit: (country: VisitedCountry, values: JournalValues) => void
+  onUpdateVisit: (id: number, values: JournalValues) => void
+  onRemoveVisit: (id: number) => void
   onReset?: () => void
 }
 
@@ -27,6 +30,7 @@ const CARD = 'bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidd
  */
 export default function CountrySidebar(props: CountrySidebarProps) {
   const { visitedCountries, selected, onSelect, onBack, onSetStatus, onSaveJournal, onRemove, onReset } = props
+  const { onAddVisit, onUpdateVisit, onRemoveVisit } = props
   const desktop = useMediaQuery('(min-width: 1024px)')
 
   const detail = selected && (
@@ -37,6 +41,9 @@ export default function CountrySidebar(props: CountrySidebarProps) {
       onSetStatus={status => onSetStatus(selected, status)}
       onSave={values => onSaveJournal(selected, values)}
       onRemove={() => onRemove(selected)}
+      onAddVisit={values => onAddVisit(selected, values)}
+      onUpdateVisit={onUpdateVisit}
+      onRemoveVisit={onRemoveVisit}
     />
   )
   const list = <CountryList visitedCountries={visitedCountries} onSelect={onSelect} onSetStatus={onSetStatus} onReset={onReset} />

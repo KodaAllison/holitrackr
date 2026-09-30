@@ -8,8 +8,12 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const productionModules = [
   'api/auth/[...all].ts',
   'api/countries.ts',
+  'api/countries/visits.ts',
   'api/public/stats.ts',
+  'src/server/countryPayloads.ts',
+  'src/server/countryVisits.ts',
   'src/server/publicStats.ts',
+  'src/server/vercelApi.ts',
 ]
 
 const runtimeImportPattern = /import\s+(?!type\b)[\s\S]*?\sfrom\s+['"](\.\.?\/[^'"]+)['"]/g

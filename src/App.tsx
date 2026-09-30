@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useRef, useState, useEffect } from 'react'
 import type { Country, VisitedCountry } from './types'
 import WorldMap from './components/WorldMap'
 import Header from './components/Header'
@@ -8,7 +8,8 @@ import CountrySearch from './components/CountrySearch'
 import CountrySidebar from './components/CountrySidebar'
 import Toast from './components/Toast'
 import { detectMilestone, markMilestoneSeen, milestoneMessage, seenMilestones, type Milestone } from './lib/milestones'
-import { journalValuesOf } from './lib/journal'
+import { journalValuesOf, type JournalValues } from './lib/journal'
+import { isPendingVisit, toVisit, visitValuesOf, withVisitAdded, withVisitRemoved, withVisitReplaced } from './lib/countryVisits'
 import TripTimeline from './components/TripTimeline'
 import CountryDetailModal from './components/CountryDetailModal'
 import SignInScreen from './components/SignInScreen'
@@ -136,6 +137,43 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     }
   }
 
+  // Extra visits (FEATURES.md #8). A new visit shows at once under a
+  // placeholder id (negative, see isPendingVisit) until the server returns it.
+  const nextPendingVisitId = useRef(-1)
+  const addVisit = async (country: VisitedCountry, values: JournalValues): Promise<void> => {
+    const pendingId = nextPendingVisitId.current--
+    setVisitedCountries(prev => withVisitAdded(prev, country, toVisit(pendingId, values)))
+    try {
+      const stored = await countriesClient.addVisit(country, values)
+      setVisitedCountries(prev => withVisitReplaced(prev, pendingId, stored))
+    } catch (err) {
+      console.warn('Failed to add visit:', err)
+      await refreshCountries()
+    }
+  }
+
+  const updateVisit = async (id: number, values: JournalValues): Promise<void> => {
+    if (isPendingVisit(id)) return // not stored yet; the list disables editing it
+    setVisitedCountries(prev => withVisitReplaced(prev, id, toVisit(id, values)))
+    try {
+      await countriesClient.updateVisit(id, values)
+    } catch (err) {
+      console.warn('Failed to update visit:', err)
+      await refreshCountries()
+    }
+  }
+
+  const removeVisit = async (id: number): Promise<void> => {
+    if (isPendingVisit(id)) return // still saving; the list hides Remove until it is stored
+    setVisitedCountries(prev => withVisitRemoved(prev, id))
+    try {
+      await countriesClient.removeVisit(id)
+    } catch (err) {
+      console.warn('Failed to remove visit:', err)
+      await refreshCountries()
+    }
+  }
+
   // From the map popup: open the country's detail panel.
   const openJournal = (code: string, name: string) => {
     const country = findCountry(visitedCountries, { code, name })
@@ -248,6 +286,12 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     try {
       await countriesClient.add({ code: country.code, name: country.name, status: country.status, notes: country.notes })
       await countriesClient.updateJournal(country, journalValuesOf(country))
+      // Removing deleted the extra visits too; add them back (they get new ids).
+      const visits = (country.visits ?? []).filter(v => !isPendingVisit(v.id))
+      for (const visit of visits) {
+        await countriesClient.addVisit(country, visitValuesOf(visit))
+      }
+      if (visits.length > 0) await refreshCountries()
     } catch (err) {
       console.warn('Failed to undo removal:', err)
       await refreshCountries()
@@ -378,6 +422,9 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
                 onSetStatus={(country, status) => toggleCountry(country, status)}
                 onSaveJournal={(country, values) => { void updateCountryJournal(country, values) }}
                 onRemove={removeCountry}
+                onAddVisit={(country, values) => { void addVisit(country, values) }}
+                onUpdateVisit={(id, values) => { void updateVisit(id, values) }}
+                onRemoveVisit={id => { void removeVisit(id) }}
                 onReset={resetVisitedCountries}
               />
             </div>

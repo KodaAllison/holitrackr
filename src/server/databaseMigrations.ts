@@ -77,4 +77,25 @@ export async function runDatabaseMigrations(): Promise<void> {
     ALTER TABLE visited_countries
       VALIDATE CONSTRAINT visited_countries_status_check
   `)
+  // Multiple visits per country (FEATURES.md #8). Add-only: visited_countries
+  // is untouched and its journal stays the first visit; this table holds the
+  // extra visits, so no backfill is needed. Reversible with DROP TABLE.
+  await database.query(`
+    CREATE TABLE IF NOT EXISTS country_visits (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+      country_code TEXT NOT NULL,
+      country_name TEXT NOT NULL,
+      visit_date DATE NOT NULL,
+      place TEXT,
+      rating INTEGER CHECK (rating IS NULL OR rating BETWEEN 1 AND 5),
+      notes TEXT,
+      tags TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `)
+  await database.query(`
+    CREATE INDEX IF NOT EXISTS country_visits_user_country_idx
+    ON country_visits (user_id, country_code, country_name)
+  `)
 }

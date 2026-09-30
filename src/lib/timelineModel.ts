@@ -1,4 +1,4 @@
-import type { VisitedCountry } from '../types'
+import type { CountryVisit, VisitedCountry } from '../types'
 import { getContinent, type Continent } from './continents'
 import { isKnownContinent } from './countryMetadata'
 import { parseVisitMonth } from './visitDate'
@@ -8,8 +8,14 @@ import { parseVisitMonth } from './visitDate'
  * measured in whole months since year 0 (`year * 12 + month - 1`), so the
  * ruler and the feed agree on ordering without any Date maths.
  */
+/** One trip's journal: the country's own fields, or an extra visit's. */
+export type TripJournal = Pick<VisitedCountry, 'visitedAt' | 'place' | 'notes' | 'rating' | 'tags'>
+
 export interface TimelineTrip {
   country: VisitedCountry
+  /** The extra visit this trip is; undefined for the country's first visit. */
+  visit?: CountryVisit
+  journal: TripJournal
   /** Months since year 0. */
   at: number
   year: number
@@ -25,12 +31,12 @@ export interface TimelineYear {
 }
 
 export interface TimelineModel {
-  /** Visited countries with a date, oldest first. */
+  /** Dated visits, oldest first: one per visit, so a country can appear more than once. */
   trips: TimelineTrip[]
   years: TimelineYear[]
   /** Bucket-list countries with a "Hoping to go" date, soonest first. */
   planned: TimelineTrip[]
-  /** Visited countries without a date. */
+  /** Visited countries with no dated visit at all. */
   undated: VisitedCountry[]
   /** Ruler range in months: January of the first trip's year to the end of the last year shown. */
   start: number
@@ -43,12 +49,19 @@ export function monthIndex(year: number, month: number): number {
   return year * 12 + month - 1
 }
 
-function toTrip(country: VisitedCountry): TimelineTrip | null {
-  const parsed = parseVisitMonth(country.visitedAt)
-  return parsed ? { country, at: monthIndex(parsed.year, parsed.month), ...parsed } : null
+function toTrip(country: VisitedCountry, visit?: CountryVisit): TimelineTrip | null {
+  const journal: TripJournal = visit ?? country
+  const parsed = parseVisitMonth(journal.visitedAt)
+  return parsed ? { country, visit, journal, at: monthIndex(parsed.year, parsed.month), ...parsed } : null
 }
 
-const byTime = (a: TimelineTrip, b: TimelineTrip) => a.at - b.at || a.country.name.localeCompare(b.country.name)
+/** A stable key for a trip: the country, plus the visit id for an extra visit. */
+export function tripKey(trip: TimelineTrip): string {
+  return `${trip.country.code}-${trip.country.name}-${trip.visit?.id ?? 'first'}`
+}
+
+const byTime = (a: TimelineTrip, b: TimelineTrip) =>
+  a.at - b.at || a.country.name.localeCompare(b.country.name) || (a.visit?.id ?? 0) - (b.visit?.id ?? 0)
 
 export function buildTimeline(countries: VisitedCountry[], today: Date): TimelineModel {
   const now = monthIndex(today.getFullYear(), today.getMonth() + 1)
@@ -61,10 +74,11 @@ export function buildTimeline(countries: VisitedCountry[], today: Date): Timelin
     if (country.status === 'bucketlist') {
       // Only future plans belong on the "Next" side of the ruler.
       if (trip && trip.at >= now) planned.push(trip)
-    } else if (trip) {
-      trips.push(trip)
     } else {
-      undated.push(country)
+      const visits = (country.visits ?? []).map(visit => toTrip(country, visit))
+      const dated = [trip, ...visits].filter((t): t is TimelineTrip => t !== null)
+      if (dated.length > 0) trips.push(...dated)
+      else undated.push(country)
     }
   }
   trips.sort(byTime)

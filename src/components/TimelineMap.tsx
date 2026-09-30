@@ -112,7 +112,7 @@ export default function TimelineMap({ model, active, reducedMotion }: TimelineMa
           }}
         >
           {trip.country.name}
-          <span className="ml-1 font-normal text-gray-500">{formatVisitMonth(trip.country.visitedAt)}</span>
+          <span className="ml-1 font-normal text-gray-500">{formatVisitMonth(trip.journal.visitedAt)}</span>
         </div>
       )}
     </div>
