@@ -49,6 +49,8 @@ const SURFACE = 'relative w-full h-full select-none'
 const IDENTITY: ViewTransform = { k: 1, x: 0, y: 0 }
 /** Mobile: fit the world to the part of the map between the floating search/chip and the sheet's peek. */
 const MOBILE_INSET: MapInset = { top: 116, right: 0, bottom: SHEET_PEEK + 8, left: 0 }
+/** Mobile: "Fit to my countries" (and the opening fit) never frames less than about a continent. */
+const MOBILE_MIN_FIT_SPAN = 60
 const HINTS: Record<MapView, string> = {
   globe: 'Drag to spin · Scroll to zoom · Click a country to open it',
   flat: 'Click a country to open it',
@@ -151,7 +153,11 @@ export default function WorldMap(props: WorldMapProps) {
         </GlobeMapSurface>
       ) : (
         <FlatMapSurface
-          options={{ ...options, fitOnOpen: true, viewRef: flatView, inset: desktop ? undefined : MOBILE_INSET }}
+          options={{
+            ...options, fitOnOpen: true, viewRef: flatView,
+            // Mobile opens framed on the user's countries, so waits for them to load.
+            ...(desktop ? {} : { inset: MOBILE_INSET, fitReady: !loading, minFitSpan: MOBILE_MIN_FIT_SPAN }),
+          }}
           canFit={canFit}
           className={SURFACE}
           controls={desktop ? undefined : fit => <MobileMapControls onFit={fit} filter={filter} onFilterChange={onMapFilterChange} />}

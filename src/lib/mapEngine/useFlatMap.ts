@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { geoPath } from 'd3-geo'
 import { select } from 'd3-selection'
 import { zoom as d3zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom'
 import type { VisitedCountry } from '../../types'
@@ -7,7 +8,7 @@ import { countryAt, type IndexedCountry } from './countryIndex'
 import { ease } from './globeMotion'
 import { CLUSTER_RADIUS, createHatch, drawMap, ShapeCache, type ViewTransform } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
-import { flatFit, flatProjection, NO_INSET, type MapInset } from './views'
+import { flatProjection, frameMarked, NO_INSET, spanWidth, type MapInset } from './views'
 
 type Status = VisitedCountry['status']
 
@@ -26,6 +27,10 @@ export interface MapViewOptions {
 export interface FlatMapOptions extends MapViewOptions {
   /** Once the data is in, animate to fit the user's marked countries. */
   fitOnOpen?: boolean
+  /** Hold the open fit until this is true (e.g. the user's countries have loaded). */
+  fitReady?: boolean
+  /** Fit to at least this many degrees of longitude, so one small country doesn't fill the view. */
+  minFitSpan?: number
   /** Receives the current pan/zoom, for the flat → globe morph. */
   viewRef?: React.MutableRefObject<ViewTransform | null>
   /** Keep the world (and "Fit to my countries") clear of floating UI, e.g. the mobile sheet. */
@@ -55,6 +60,11 @@ export function useFlatMap(options: FlatMapOptions) {
   const inset = useMemo(() => ({ top, right, bottom, left }), [top, right, bottom, left])
   const projection = useMemo(() => flatProjection(size, inset), [size, inset])
   const shapes = useMemo(() => new ShapeCache(projection), [projection])
+  const worldWidth = useMemo(() => {
+    const [[x0], [x1]] = geoPath(projection).bounds({ type: 'Sphere' })
+    return x1 - x0
+  }, [projection])
+  const minFitSpan = options.minFitSpan
 
   const draw = useCallback(() => {
     frame.current = 0
@@ -138,19 +148,10 @@ export function useFlatMap(options: FlatMapOptions) {
   const fitMine = useCallback(() => {
     const { countries, statusOf } = latest.current
     if (!countries || size.width === 0) return
-    const marked = countries.filter(c => statusOf(c))
-    let target = zoomIdentity
-    if (marked.length > 0) {
-      let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity]
-      for (const c of marked) {
-        const [[a, b], [cx, cy]] = shapes.bounds(c)
-        x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, cx); y1 = Math.max(y1, cy)
-      }
-      const fit = flatFit([[x0, y0], [x1, y1]], size, inset, FIT_MAX_ZOOM)
-      target = zoomIdentity.translate(fit.x, fit.y).scale(fit.k)
-    }
-    animateTo(target)
-  }, [animateTo, shapes, size, inset])
+    const boxes = countries.filter(c => statusOf(c)).map(c => shapes.bounds(c))
+    const fit = frameMarked(boxes, size, inset, FIT_MAX_ZOOM, spanWidth(worldWidth, minFitSpan ?? 0))
+    animateTo(zoomIdentity.translate(fit.x, fit.y).scale(fit.k))
+  }, [animateTo, shapes, size, inset, worldWidth, minFitSpan])
 
   /** The +/- buttons: zoom about the centre, within the zoom limits. */
   const zoomBy = useCallback((factor: number) => {
@@ -171,7 +172,7 @@ export function useFlatMap(options: FlatMapOptions) {
 
   // Fit once, when the view opens with data and a size.
   const fitted = useRef(false)
-  const ready = options.countries !== null && size.width > 0
+  const ready = options.countries !== null && size.width > 0 && options.fitReady !== false
   useEffect(() => {
     if (!ready || fitted.current || !latest.current.fitOnOpen) return
     fitted.current = true

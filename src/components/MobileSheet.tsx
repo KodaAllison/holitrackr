@@ -1,5 +1,5 @@
-import { useRef, useState, type ReactNode } from 'react'
-import { clampSheetHeight, expandedHeight, isTap, snapExpanded } from '../lib/mobileSheet'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { clampSheetHeight, expandedHeight, isTap, SHEET_HEIGHT_VAR, snapExpanded } from '../lib/mobileSheet'
 
 interface MobileSheetProps {
   label: string
@@ -25,13 +25,30 @@ interface Drag {
 /**
  * Below `lg`: a sheet over the bottom of the map. Drag its handle to resize
  * (it snaps collapsed or expanded) or tap it to toggle. The height eases
- * between snaps unless the viewer prefers reduced motion.
+ * between snaps unless the viewer prefers reduced motion. Its current
+ * height (while dragging and easing too) is published as the
+ * `--sheet-height` CSS variable on <html>, so the `ToastStack` can sit
+ * just above it.
  */
 export default function MobileSheet({ label, expanded, onExpandedChange, collapsedHeight, children }: MobileSheetProps) {
   const sheet = useRef<HTMLElement>(null)
   const drag = useRef<Drag | null>(null)
   const suppressClick = useRef(false)
   const [dragHeight, setDragHeight] = useState<number | null>(null)
+
+  useEffect(() => {
+    const el = sheet.current
+    const root = document.documentElement
+    if (!el) return
+    const publish = () => root.style.setProperty(SHEET_HEIGHT_VAR, `${Math.round(el.getBoundingClientRect().height)}px`)
+    publish()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    observer?.observe(el)
+    return () => {
+      observer?.disconnect()
+      root.style.removeProperty(SHEET_HEIGHT_VAR)
+    }
+  }, [])
 
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     const el = sheet.current
