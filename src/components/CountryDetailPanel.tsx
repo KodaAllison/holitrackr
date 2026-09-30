@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { VisitedCountry } from '../types'
+import { getContinent } from '../lib/continents'
 import { journalValuesOf, type JournalValues } from '../lib/journal'
+import AutosaveStatus, { type SaveState } from './AutosaveStatus'
 import JournalFields from './JournalFields'
-import StatusPill from './StatusPill'
+import StatusControl from './StatusControl'
 import VisitList from './VisitList'
 
 type Status = VisitedCountry['status']
@@ -22,15 +24,24 @@ interface CountryDetailPanelProps {
 const AUTOSAVE_MS = 600
 
 /**
- * One country's detail: status, and the journal edited inline with autosave.
- * Mount it with a `key` per country so its form state starts fresh.
+ * One country's detail: continent and name, the status buttons, and the
+ * journal edited inline with autosave. Esc closes it. Mount it with a `key`
+ * per country so its form state starts fresh.
  */
 export default function CountryDetailPanel(props: CountryDetailPanelProps) {
   const { country, onBack, onSetStatus, onSave, onRemove, onAddVisit, onUpdateVisit, onRemoveVisit } = props
   const [values, setValues] = useState(() => journalValuesOf(country))
-  const [saved, setSaved] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'failed'>('idle')
+  const [saved, setSaved] = useState<SaveState>('idle')
   const save = useRef(onSave)
-  useEffect(() => { save.current = onSave })
+  const back = useRef(onBack)
+  useEffect(() => { save.current = onSave; back.current = onBack })
+
+  // Esc closes the panel (menus and editors that handle Esc first prevent this).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) back.current() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 
   // Autosave shortly after the last edit.
   const dirty = saved === 'pending'
@@ -55,37 +66,54 @@ export default function CountryDetailPanel(props: CountryDetailPanelProps) {
   }, [])
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center gap-2 px-3 pt-3 pb-2 border-b border-gray-100">
-        <button type="button" onClick={onBack} aria-label="Back to your countries" className="h-8 w-8 rounded-full text-gray-500 hover:bg-gray-100 text-lg leading-none">‹</button>
-        <h2 className="flex-1 min-w-0 text-lg font-bold text-gray-900 truncate">{country.name}</h2>
-        <StatusPill status={country.status} name={country.name} onToggle={onSetStatus} />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center justify-between px-3 pt-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-10 items-center gap-1 rounded-lg pl-1.5 pr-3 text-sm font-medium text-[#334155] hover:bg-[#F7F9FB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+          All countries
+        </button>
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Close (Esc)"
+          title="Close (Esc)"
+          className="flex h-11 w-11 items-center justify-center rounded-[10px] hover:bg-[#F7F9FB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5B6675" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
-        <JournalFields
-          status={country.status}
-          values={values}
-          onChange={v => { setValues(v); setSaved('pending') }}
-          idPrefix="detail"
-        />
+
+      <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-5 pb-4 pt-1">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5B6675]">{getContinent(country.code, country.name)}</span>
+          <h2 className="text-[28px] font-bold leading-tight tracking-[-0.01em] text-[#1E293B]">{country.name}</h2>
+        </div>
+
+        <StatusControl status={country.status} onSetStatus={onSetStatus} onRemove={onRemove} />
+
+        <div className="h-px shrink-0 bg-[#E4E9EE]" />
+
+        <section aria-labelledby="journal-heading" className="flex flex-col gap-3">
+          <h3 id="journal-heading" className="text-[15px] font-bold text-[#1E293B]">Journal</h3>
+          <JournalFields
+            status={country.status}
+            values={values}
+            onChange={v => { setValues(v); setSaved('pending') }}
+            idPrefix="detail"
+          />
+        </section>
+
         {country.status === 'visited' && (
           <VisitList country={country} onAdd={onAddVisit} onUpdate={onUpdateVisit} onRemove={onRemoveVisit} />
         )}
       </div>
-      <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-        {saved === 'failed' ? (
-          <span role="alert" className="text-xs text-red-600">
-            Couldn't save.{' '}
-            <button type="button" onClick={() => setSaved('pending')} className="font-semibold underline">Try again</button>
-          </span>
-        ) : (
-          <span role="status" className="text-xs text-gray-400">
-            {saved === 'pending' || saved === 'saving' ? 'Saving…' : saved === 'saved' ? 'Saved' : 'Changes save automatically'}
-          </span>
-        )}
-        <button type="button" onClick={onRemove} className="text-xs font-medium text-red-600 hover:text-red-700">
-          Remove from my atlas
-        </button>
+
+      <div className="shrink-0 px-5 pb-4 pt-3">
+        <AutosaveStatus state={saved} onRetry={() => setSaved('pending')} />
       </div>
     </div>
   )

@@ -395,10 +395,8 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
               </div>
             )}
           </section>
-          <aside
-            aria-label="Your countries"
-            className="relative z-10 -mt-5 pt-2 rounded-t-[20px] bg-white shadow-[0_-8px_30px_rgba(15,23,42,0.16)] lg:mt-0 lg:pt-0 lg:w-[360px] lg:shrink-0 lg:rounded-none lg:shadow-none lg:border-l lg:border-[#D7DEE5]"
-          >
+          {/* CountrySidebar renders the <aside> landmark and, on desktop, its left border. */}
+          <div className="relative z-10 -mt-5 pt-2 rounded-t-[20px] bg-white shadow-[0_-8px_30px_rgba(15,23,42,0.16)] lg:mt-0 lg:pt-0 lg:w-[360px] lg:shrink-0 lg:rounded-none lg:shadow-none">
             <div aria-hidden="true" className="lg:hidden mx-auto h-[5px] w-10 rounded-full bg-[#C7D0D9]" />
             <CountrySidebar
               visitedCountries={visitedCountries}
@@ -412,9 +410,9 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
               onUpdateVisit={(id, values) => { void updateVisit(id, values) }}
               onRemoveVisit={id => { void removeVisit(id) }}
               onReset={resetVisitedCountries}
-              listAction={!desktop && <TimelineButton onClick={() => setActiveView('timeline')} />}
+              listAction={!desktop && <TimelineButton onClick={() => { setActiveView('timeline'); window.scrollTo(0, 0) }} />}
             />
-          </aside>
+          </div>
         </main>
       ) : (
         <main className="flex-1 min-h-0 overflow-y-auto bg-[#F8FAFC]">

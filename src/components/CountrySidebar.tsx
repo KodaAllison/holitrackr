@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { VisitedCountry } from '../types'
 import type { JournalValues } from '../lib/journal'
+import type { ListSort } from '../lib/countryListModel'
 import { countryKey } from '../lib/visitedCountries'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import CountryDetailPanel from './CountryDetailPanel'
@@ -20,28 +21,41 @@ interface CountrySidebarProps {
   onUpdateVisit: (id: number, values: JournalValues) => void
   onRemoveVisit: (id: number) => void
   onReset?: () => void
+  /** While the countries load, the list shows skeleton rows. */
+  loading?: boolean
   /** Beside the list's heading (mobile: the Timeline button). */
   listAction?: ReactNode
 }
 
-// The app shell provides the panel's edge (desktop column / mobile sheet).
-const CARD = 'bg-white overflow-hidden'
-
 /**
  * The map's sidebar: the country list, or one country's detail panel. On
- * desktop the panel replaces the list in place; on smaller screens the list
- * stays and the panel opens as a bottom sheet.
+ * desktop it fills its container's height and the panel replaces the list
+ * in place; on smaller screens the list stays and the panel opens as a
+ * bottom sheet.
  */
 export default function CountrySidebar(props: CountrySidebarProps) {
-  const { visitedCountries, selected, onSelect, onBack, onSetStatus, onSaveJournal, onRemove, onReset } = props
-  const { onAddVisit, onUpdateVisit, onRemoveVisit, listAction } = props
+  const { visitedCountries, selected, onSelect, onBack, onSetStatus, onSaveJournal, onRemove, onReset, loading, listAction } = props
+  const { onAddVisit, onUpdateVisit, onRemoveVisit } = props
   const desktop = useMediaQuery('(min-width: 1024px)')
+  // List UI state lives here so it survives the detail panel replacing the list.
+  const [tab, setTab] = useState<Status>('visited')
+  const [sort, setSort] = useState<ListSort>('continent')
+  const [returnKey, setReturnKey] = useState<string | undefined>(undefined)
+
+  const close = () => {
+    if (selected) {
+      // Come back to the country's own tab, with its row focused.
+      setTab(selected.status)
+      setReturnKey(countryKey(selected))
+    }
+    onBack()
+  }
 
   const detail = selected && (
     <CountryDetailPanel
       key={countryKey(selected)}
       country={selected}
-      onBack={onBack}
+      onBack={close}
       onSetStatus={status => onSetStatus(selected, status)}
       onSave={values => onSaveJournal(selected, values)}
       onRemove={() => onRemove(selected)}
@@ -50,19 +64,40 @@ export default function CountrySidebar(props: CountrySidebarProps) {
       onRemoveVisit={onRemoveVisit}
     />
   )
-  const list = <CountryList visitedCountries={visitedCountries} onSelect={onSelect} onSetStatus={onSetStatus} onReset={onReset} action={listAction} />
+  const list = (
+    <CountryList
+      visitedCountries={visitedCountries}
+      tab={tab}
+      onTabChange={setTab}
+      sort={sort}
+      onSortChange={setSort}
+      onSelect={onSelect}
+      onSetStatus={onSetStatus}
+      onReset={onReset}
+      focusKey={returnKey}
+      loading={loading}
+      action={listAction}
+    />
+  )
 
-  if (desktop) return <div className={`${CARD} h-full`}>{detail || list}</div>
+  if (desktop) {
+    return (
+      <aside aria-label={selected ? selected.name : 'Your countries'} className="flex h-full min-h-[420px] flex-col border-l border-[#D7DEE5] bg-white">
+        {detail || list}
+      </aside>
+    )
+  }
 
   return (
     <>
-      <div className={`${CARD} h-[65dvh] min-h-[380px]`}>{list}</div>
+      {/* The app shell's sheet provides the rounded edge and grab handle. */}
+      <aside aria-label="Your countries" className="h-[65dvh] min-h-[380px] overflow-hidden bg-white">{list}</aside>
       {detail && (
         <div className="fixed inset-0 z-40 flex flex-col justify-end">
-          <button type="button" aria-label="Close" className="absolute inset-0 bg-black/30" onClick={onBack} />
-          <div role="dialog" aria-label={selected.name} className="relative max-h-[80vh] h-[80vh] bg-white rounded-t-2xl shadow-2xl">
-            <div aria-hidden="true" className="mx-auto mt-2 h-1 w-10 rounded-full bg-gray-300" />
-            {detail}
+          <button type="button" aria-label="Close" className="absolute inset-0 bg-black/30" onClick={close} />
+          <div role="dialog" aria-label={selected.name} className="relative flex h-[80vh] max-h-[80vh] flex-col rounded-t-[20px] bg-white shadow-2xl">
+            <div aria-hidden="true" className="mx-auto mt-2 h-[5px] w-10 shrink-0 rounded-full bg-[#D7DEE5]" />
+            <div className="min-h-0 flex-1">{detail}</div>
           </div>
         </div>
       )}
