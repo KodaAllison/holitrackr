@@ -7,6 +7,7 @@ import { createHatch } from '../lib/mapEngine/renderer'
 import { drawSignIn } from '../lib/mapEngine/drawSignIn'
 import { useCanvasSize } from '../lib/mapEngine/useCanvasSize'
 import { useWorldCountries } from '../lib/mapEngine/useWorldCountries'
+import { signInLayout } from '../lib/signInCallout'
 import { buildTour, tourAt } from '../lib/signInTour'
 import { useMediaQuery } from '../lib/useMediaQuery'
 
@@ -17,14 +18,6 @@ interface SignInScreenProps {
 
 const mono = "font-['JetBrains_Mono',ui-monospace,monospace] text-[11px] tracking-[0.18em] text-slate-500 leading-[1.8]"
 const serif = "font-['Instrument_Serif',Georgia,serif] italic"
-
-/** Globe geometry for the viewport: centred, with room below for the call to action. */
-function layout(width: number, height: number) {
-  const top = 72
-  const area = Math.max(200, height - top - 250)
-  const radius = Math.round(Math.max(80, Math.min(250, area / 2 - 50, width / 2 - 64)))
-  return { cx: width / 2, cy: top + area / 2, radius }
-}
 
 /**
  * The signed-out first load: a dark "atlas plate" globe touring a demo
@@ -41,7 +34,7 @@ export default function SignInScreen({ timedOut }: SignInScreenProps) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const hatch = useRef<CanvasPattern | null>(null)
-  const geometry = layout(size.width, size.height)
+  const geometry = signInLayout(size.width, size.height)
 
   useEffect(() => {
     let cancelled = false
@@ -57,14 +50,14 @@ export default function SignInScreen({ timedOut }: SignInScreenProps) {
     if (!ctx || !motionCountries || stops.length === 0 || size.width === 0) return
     hatch.current ??= createHatch(ctx)
     const order = new Map(stops.map((s, i) => [countryKey(s.country.identity), i]))
-    const { cx, cy, radius } = layout(size.width, size.height)
+    const { cx, cy, radius, ctaTop } = signInLayout(size.width, size.height)
     const start = performance.now()
     let frame = 0
     const render = (now: number) => {
       const seconds = (now - start) / 1000
       const moment = tourAt(stops, seconds, reduced)
       drawSignIn({
-        ctx, ...size, dpr: window.devicePixelRatio || 1, cx, cy, radius,
+        ctx, ...size, dpr: window.devicePixelRatio || 1, cx, cy, radius, ctaTop,
         rotate: moment.rotate, countries: motionCountries, hatch: hatch.current,
         fillOf: c => {
           const i = order.get(countryKey(c.identity))
@@ -93,8 +86,6 @@ export default function SignInScreen({ timedOut }: SignInScreenProps) {
     }
   }
 
-  const ctaTop = geometry.cy + geometry.radius + (geometry.radius < 160 ? 56 : 76)
-
   return (
     <main className="relative min-h-screen h-[100dvh] overflow-hidden bg-[#0B1220] text-slate-50">
       <div ref={containerRef} className="absolute inset-0">
@@ -110,7 +101,7 @@ export default function SignInScreen({ timedOut }: SignInScreenProps) {
       <p className={`hidden sm:block absolute right-10 top-10 text-right ${mono}`}>A PERSONAL ATLAS<br />OF THE 195 COUNTRIES</p>
 
       {size.width > 0 && (
-        <div className="absolute inset-x-0 flex flex-col items-center gap-3 px-6" style={{ top: ctaTop }}>
+        <div className="absolute inset-x-0 flex flex-col items-center gap-3 px-6" style={{ top: geometry.ctaTop }}>
           <h1 className={`${serif} font-normal text-[32px] sm:text-[40px] leading-none text-center`}>So, where have you been?</h1>
           {timedOut && (
             <p role="status" className="text-sm text-amber-300">The sign-in server is slow to respond. You can still try.</p>

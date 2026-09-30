@@ -77,8 +77,9 @@ export function tourAt(stops: TourStop[], seconds: number, reduced: boolean): To
   }
 
   const k = (Math.max(0, seconds) % (n * STEP_SECONDS)) / STEP_SECONDS
-  const index = Math.floor(k)
-  const phase = k - index
+  // Float rounding can land k exactly on n (e.g. 27.2 % 27.200000000000003), so keep the index in range.
+  const index = Math.min(n - 1, Math.floor(k))
+  const phase = Math.min(1, k - index)
   const next = (index + 1) % n
   const [alon, alat] = stops[index].country.anchor
   const [blon, blat] = stops[next].country.anchor
