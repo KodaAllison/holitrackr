@@ -19,4 +19,20 @@ export interface VisitedCountry {
   visitedAt?: string
   rating?: number
   tags?: string[]
+  /**
+   * Extra visits after the first, oldest first. The fields above are the
+   * country's first (primary) visit; these come from `country_visits`.
+   */
+  visits?: CountryVisit[]
+}
+
+/** One extra visit to a country, with its own journal. */
+export interface CountryVisit {
+  id: number
+  /** `YYYY-MM`; every extra visit has a date. */
+  visitedAt: string
+  place?: string
+  rating?: number
+  notes?: string
+  tags?: string[]
 }

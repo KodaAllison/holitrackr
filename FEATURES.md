@@ -141,7 +141,7 @@ Let users take their data out of the app.
 ---
 
 ## 8. Multiple Visits per Country
-**Status:** Idea
+**Status:** Done on `atlas-v2` (`country_visits` table, "Add another visit" in the detail panel, one timeline card per visit)
 
 Support logging multiple visits to the same country, each with its own date and optionally its own notes. Currently the schema stores one row per country per user, so a repeat visitor loses all but one trip date.
 
@@ -154,9 +154,28 @@ Support logging multiple visits to the same country, each with its own date and 
 
 **Atlas v2 update.** The visits table carries the per-trip journal:
 `(id, user_id, country_code, country_name, visit_date, place, rating, notes, tags)`.
-It is backfilled from `visited_countries.visit_date`, and status stays on
-`visited_countries`. The migration must be reversible and have a backfill test.
-Land it on `atlas-v2` only. The detail panel gets "Add another visit".
+Status stays on `visited_countries`. Land it on `atlas-v2` only. The detail
+panel gets "Add another visit".
+
+**As built — add-only, no backfill.** The migration only adds
+`country_visits` (plus an index on `user_id, country_code, country_name`);
+nothing in `visited_countries` is dropped, renamed, altered or copied, so it
+is reversible with `DROP TABLE country_visits`. Instead of backfilling, a
+country's own journal columns on `visited_countries` stay its **first visit**,
+and `country_visits` holds only the **extra** visits:
+- `GET /api/countries` keeps every existing field and adds `visits` (extra
+  visits, oldest first; omitted when there are none). One extra query, joined
+  in `src/server/countryVisits.ts`.
+- `POST / PATCH / DELETE /api/countries/visits` add, edit (by `id`) and remove
+  (by `id`) an extra visit, always scoped to the session user. An extra visit
+  needs a date; adding one needs the country to be in the user's atlas.
+- Removing a country, or Reset, deletes its extra visits in the same statement.
+- Detail panel (visited only): a Visits list under the journal (the first
+  visit, then each extra visit with Edit / Remove) and "Add another visit".
+- Timeline: every dated visit is its own card, ruler dot and route point;
+  "First time in <continent>" still marks only the first trip.
+- Milestones and the public stats API still count countries, never visits.
+- Visit count on the map (the open question above) is not shown yet.
 
 ---
 

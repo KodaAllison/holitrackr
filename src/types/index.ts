@@ -1,9 +1,13 @@
-export type { Country, VisitedCountry } from './country.ts'
+export type { Country, CountryVisit, VisitedCountry } from './country.ts'
 export type {
   CountryIdentity,
+  CountryVisitDto,
+  CountryVisitRow,
   CreateCountryInput,
+  CreateVisitInput,
   StoredCountryRow,
   UpdateCountryInput,
+  UpdateVisitInput,
 } from './countriesApi.ts'
 export type {
   PublicCountry,

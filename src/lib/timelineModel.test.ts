@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { VisitedCountry } from '../types'
-import { buildTimeline, monthIndex, nearestTrip, tripAtOrBefore } from './timelineModel'
+import { buildTimeline, monthIndex, nearestTrip, tripAtOrBefore, tripKey } from './timelineModel'
 
 const today = new Date(2026, 7, 15) // Aug 2026
 
@@ -50,6 +50,57 @@ describe('buildTimeline', () => {
     expect(empty.trips).toEqual([])
     expect(empty.start).toBe(monthIndex(2026, 1))
     expect(empty.end).toBe(monthIndex(2026, 12))
+  })
+})
+
+describe('buildTimeline with multiple visits', () => {
+  const repeat: VisitedCountry[] = [
+    {
+      code: 'JPN', name: 'Japan', status: 'visited', visitedAt: '2019-04', place: 'Tokyo', rating: 4,
+      visits: [
+        { id: 7, visitedAt: '2024-11', place: 'Kyoto', rating: 5, tags: ['Food'] },
+        { id: 3, visitedAt: '2016-02', notes: 'Stopover' },
+      ],
+    },
+    { code: 'ESP', name: 'Spain', status: 'visited', visitedAt: '2017-06' },
+    // No date on the first visit, but a dated extra visit: not "undated".
+    { code: 'KEN', name: 'Kenya', status: 'visited', visits: [{ id: 9, visitedAt: '2021-08' }] },
+    // Visits on a bucket-list country stay off the timeline.
+    { code: 'PER', name: 'Peru', status: 'bucketlist', visitedAt: '2027-05', visits: [{ id: 11, visitedAt: '2012-01' }] },
+  ]
+  const model = buildTimeline(repeat, today)
+
+  it('makes each visit its own trip, oldest first', () => {
+    expect(model.trips.map(t => [t.country.name, t.journal.visitedAt, t.visit?.id ?? null])).toEqual([
+      ['Japan', '2016-02', 3],
+      ['Spain', '2017-06', null],
+      ['Japan', '2019-04', null],
+      ['Kenya', '2021-08', 9],
+      ['Japan', '2024-11', 7],
+    ])
+  })
+
+  it('shows each trip\'s own journal', () => {
+    expect(model.trips[0].journal).toMatchObject({ notes: 'Stopover' })
+    expect(model.trips[2].journal).toMatchObject({ place: 'Tokyo', rating: 4 })
+    expect(model.trips[4].journal).toMatchObject({ place: 'Kyoto', rating: 5, tags: ['Food'] })
+  })
+
+  it('marks "first time in" only on the first trip to a continent', () => {
+    expect(model.trips.map(t => t.firstIn ?? null)).toEqual(['Asia', 'Europe', null, 'Africa', null])
+  })
+
+  it('gives every trip a distinct key', () => {
+    expect(new Set(model.trips.map(tripKey)).size).toBe(model.trips.length)
+  })
+
+  it('lists a country as undated only when none of its visits has a date', () => {
+    expect(model.undated).toEqual([])
+    expect(model.planned.map(t => t.country.name)).toEqual(['Peru'])
+  })
+
+  it('starts the ruler at the earliest visit', () => {
+    expect(model.start).toBe(monthIndex(2016, 1))
   })
 })
 

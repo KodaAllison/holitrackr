@@ -3,8 +3,10 @@ import type {
   CountryIdentity,
   VisitedCountryDto,
 } from '../types/countriesApi'
-import type { VisitedCountry } from '../types/country'
+import type { CountryVisit, VisitedCountry } from '../types/country'
 import { sameCountry } from './visitedCountries'
+import { isVisitMonth } from './visitDate'
+import { sortVisits, toVisit } from './countryVisits'
 
 export interface CountryJournalUpdates {
   notes: string
@@ -23,7 +25,13 @@ export interface CountriesClient {
     updates: CountryJournalUpdates
   ): Promise<void>
   reset(): Promise<void>
+  /** Add an extra visit (its `visitedAt` is required); resolves to the stored visit. */
+  addVisit(country: CountryIdentity, values: CountryJournalUpdates): Promise<CountryVisit>
+  updateVisit(id: number, values: CountryJournalUpdates): Promise<void>
+  removeVisit(id: number): Promise<void>
 }
+
+const VISITS_PATH = '/api/countries/visits'
 
 export class CountriesClientError extends Error {
   readonly status?: number
@@ -37,15 +45,74 @@ export class CountriesClientError extends Error {
   }
 }
 
+function cloneVisit(visit: CountryVisit): CountryVisit {
+  return { ...visit, tags: visit.tags ? [...visit.tags] : undefined }
+}
+
 function cloneCountry(country: VisitedCountry): VisitedCountry {
   return {
     ...country,
     tags: country.tags ? [...country.tags] : undefined,
+    visits: country.visits?.map(cloneVisit),
   }
 }
 
 function isOptionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === 'string'
+}
+
+function isOptionalRating(value: unknown): value is number | undefined {
+  return value === undefined ||
+    (typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 5)
+}
+
+function isOptionalTags(value: unknown): value is string[] | undefined {
+  return value === undefined ||
+    (Array.isArray(value) && value.every((tag) => typeof tag === 'string'))
+}
+
+function parseVisitDto(value: unknown): CountryVisit | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined
+  }
+  const visit = value as Record<string, unknown>
+  if (
+    typeof visit.id !== 'number' ||
+    !Number.isInteger(visit.id) ||
+    !isVisitMonth(visit.visitedAt) ||
+    !isOptionalString(visit.place) ||
+    !isOptionalString(visit.notes) ||
+    !isOptionalRating(visit.rating) ||
+    !isOptionalTags(visit.tags)
+  ) {
+    return undefined
+  }
+  return {
+    id: visit.id,
+    visitedAt: visit.visitedAt,
+    place: visit.place,
+    rating: visit.rating,
+    notes: visit.notes,
+    tags: visit.tags,
+  }
+}
+
+function parseVisitsDto(value: unknown): CountryVisit[] | undefined | null {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) return null
+  const visits = value.map(parseVisitDto)
+  return visits.every((visit): visit is CountryVisit => visit !== undefined) ? visits : null
+}
+
+/** The journal as the API takes it: blanks become null. */
+function journalBody(values: CountryJournalUpdates) {
+  return {
+    notes: values.notes,
+    place: values.place.trim() || null,
+    visitedAt: values.visitedAt || null,
+    rating: values.rating ?? null,
+    tags: values.tags,
+  }
 }
 
 function parseCountryDto(value: unknown): VisitedCountryDto | undefined {
@@ -54,7 +121,9 @@ function parseCountryDto(value: unknown): VisitedCountryDto | undefined {
   }
 
   const country = value as Record<string, unknown>
+  const visits = parseVisitsDto(country.visits)
   if (
+    visits === null ||
     typeof country.code !== 'string' ||
     typeof country.name !== 'string' ||
     (country.status !== 'visited' && country.status !== 'bucketlist') ||
@@ -82,6 +151,7 @@ function parseCountryDto(value: unknown): VisitedCountryDto | undefined {
     visitedAt: country.visitedAt,
     rating: country.rating,
     tags: country.tags,
+    ...(visits ? { visits } : {}),
   }
 }
 
@@ -112,8 +182,9 @@ export function createHttpCountriesClient(
 ): CountriesClient {
   const jsonRequest = (
     method: 'POST' | 'PATCH' | 'DELETE',
-    body: unknown
-  ): Promise<Response> => assertSuccessfulResponse(fetcher, '/api/countries', {
+    body: unknown,
+    path = '/api/countries'
+  ): Promise<Response> => assertSuccessfulResponse(fetcher, path, {
     method,
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -173,12 +244,34 @@ export function createHttpCountriesClient(
       await jsonRequest('PATCH', {
         code: country.code,
         name: country.name,
-        notes: updates.notes,
-        place: updates.place.trim() || null,
-        visitedAt: updates.visitedAt || null,
-        rating: updates.rating ?? null,
-        tags: updates.tags,
+        ...journalBody(updates),
       })
+    },
+
+    async addVisit(country, values) {
+      const response = await jsonRequest('POST', {
+        code: country.code,
+        name: country.name,
+        ...journalBody(values),
+      }, VISITS_PATH)
+      let visit: CountryVisit | undefined
+      try {
+        visit = parseVisitDto(await response.json())
+      } catch (error) {
+        throw new CountriesClientError('Countries API returned an invalid response', response.status, error)
+      }
+      if (!visit) {
+        throw new CountriesClientError('Countries API returned an invalid response', response.status)
+      }
+      return visit
+    },
+
+    async updateVisit(id, values) {
+      await jsonRequest('PATCH', { id, ...journalBody(values) }, VISITS_PATH)
+    },
+
+    async removeVisit(id) {
+      await jsonRequest('DELETE', { id }, VISITS_PATH)
     },
 
     async reset() {
@@ -194,6 +287,7 @@ export function createInMemoryCountriesClient(
   initialCountries: VisitedCountry[] = []
 ): CountriesClient {
   let countries = initialCountries.map(cloneCountry)
+  let nextVisitId = 1 + Math.max(0, ...countries.flatMap((c) => c.visits ?? []).map((v) => v.id))
 
   return {
     async list() {
@@ -243,6 +337,32 @@ export function createInMemoryCountriesClient(
 
     async reset() {
       countries = []
+    },
+
+    async addVisit(country, values) {
+      const existing = countries.find((candidate) => sameCountry(candidate, country))
+      if (!existing) throw new CountriesClientError('Country not found', 404)
+      if (!isVisitMonth(values.visitedAt)) throw new CountriesClientError('Invalid payload', 400)
+      const visit = toVisit(nextVisitId++, values)
+      existing.visits = sortVisits([...(existing.visits ?? []), visit])
+      return cloneVisit(visit)
+    },
+
+    async updateVisit(id, values) {
+      if (!isVisitMonth(values.visitedAt)) throw new CountriesClientError('Invalid payload', 400)
+      const owner = countries.find((country) => country.visits?.some((visit) => visit.id === id))
+      if (!owner?.visits) throw new CountriesClientError('Visit not found', 404)
+      owner.visits = sortVisits(owner.visits.map((visit) =>
+        visit.id === id ? toVisit(id, values) : visit
+      ))
+    },
+
+    async removeVisit(id) {
+      for (const country of countries) {
+        if (!country.visits) continue
+        country.visits = country.visits.filter((visit) => visit.id !== id)
+        if (country.visits.length === 0) delete country.visits
+      }
     },
   }
 }

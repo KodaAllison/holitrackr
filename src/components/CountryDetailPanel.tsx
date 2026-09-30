@@ -3,6 +3,7 @@ import type { VisitedCountry } from '../types'
 import { journalValuesOf, type JournalValues } from '../lib/journal'
 import JournalFields from './JournalFields'
 import StatusPill from './StatusPill'
+import VisitList from './VisitList'
 
 type Status = VisitedCountry['status']
 
@@ -12,6 +13,9 @@ interface CountryDetailPanelProps {
   onSetStatus: (status: Status) => void
   onSave: (values: JournalValues) => void
   onRemove: () => void
+  onAddVisit: (values: JournalValues) => void
+  onUpdateVisit: (id: number, values: JournalValues) => void
+  onRemoveVisit: (id: number) => void
 }
 
 const AUTOSAVE_MS = 600
@@ -20,7 +24,8 @@ const AUTOSAVE_MS = 600
  * One country's detail: status, and the journal edited inline with autosave.
  * Mount it with a `key` per country so its form state starts fresh.
  */
-export default function CountryDetailPanel({ country, onBack, onSetStatus, onSave, onRemove }: CountryDetailPanelProps) {
+export default function CountryDetailPanel(props: CountryDetailPanelProps) {
+  const { country, onBack, onSetStatus, onSave, onRemove, onAddVisit, onUpdateVisit, onRemoveVisit } = props
   const [values, setValues] = useState(() => journalValuesOf(country))
   const [saved, setSaved] = useState<'idle' | 'pending' | 'saved'>('idle')
   const save = useRef(onSave)
@@ -56,6 +61,9 @@ export default function CountryDetailPanel({ country, onBack, onSetStatus, onSav
           onChange={v => { setValues(v); setSaved('pending') }}
           idPrefix="detail"
         />
+        {country.status === 'visited' && (
+          <VisitList country={country} onAdd={onAddVisit} onUpdate={onUpdateVisit} onRemove={onRemoveVisit} />
+        )}
       </div>
       <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
         <span role="status" className="text-xs text-gray-400">

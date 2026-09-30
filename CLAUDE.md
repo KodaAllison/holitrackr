@@ -31,7 +31,7 @@ npm run preview      # Vite preview of production build
 ### Server (`server.ts`)
 The single entry point for the backend. It:
 - Mounts Better-Auth middleware at `/api/auth/**` for Google OAuth + session handling
-- Exposes REST endpoints under `/api/countries` (GET, POST, DELETE, PATCH)
+- Exposes REST endpoints under `/api/countries` (GET, POST, DELETE, PATCH) and `/api/countries/visits` (POST, PATCH, DELETE: extra visits)
 - Runs Vite as middleware in dev mode; serves `/dist` in production
 - Runs the shared PostgreSQL migrations on startup from `src/server/databaseMigrations.ts`
 
@@ -49,6 +49,20 @@ rating        INTEGER     (1-5 or NULL; CHECK constraint)
 tags          TEXT        (JSON array of strings; API serialises as tags: string[])
 created_at    TIMESTAMPTZ
 ```
+The journal columns above are the country's **first visit**. Extra visits
+(FEATURES.md #8) live in **`country_visits`** (added, never backfilled; the
+API returns them as `visits` on each country, oldest first):
+```
+id            SERIAL PK
+user_id       TEXT        (REFERENCES "user"(id) ON DELETE CASCADE)
+country_code  TEXT        ┐ same identity as visited_countries;
+country_name  TEXT        ┘ indexed with user_id
+visit_date    DATE NOT NULL (YYYY-MM-01; API: visitedAt YYYY-MM)
+place, rating, notes, tags  (as on visited_countries; rating CHECK 1-5 or NULL)
+created_at    TIMESTAMPTZ
+```
+Removing a country (or Reset) deletes its `country_visits` rows in the same
+statement. Shared query/handler logic is in `src/server/countryVisits.ts`.
 
 ### Frontend (`src/`)
 - `App.tsx` — top-level state owner: session, visited countries array, toggle/remove/reset logic, localStorage migration
@@ -59,7 +73,8 @@ created_at    TIMESTAMPTZ
 - `src/components/SignInScreen.tsx` — signed-out "atlas plate": dark globe touring a demo journey (`src/lib/signInTour.ts`, drawn by `mapEngine/drawSignIn.ts`) and Continue with Google. Uses self-hosted Instrument Serif + JetBrains Mono (`@fontsource`), a deliberate exception to the palette/fonts rule scoped to this screen
 - `src/components/Header.tsx` — navbar; accepts optional `user` prop to render `UserMenu`
 - `src/components/Stats.tsx` — visited/bucket-list counts bar
-- `src/components/CountrySidebar.tsx` — sidebar: `CountryList` (Visited / Bucket list tabs, continent groups, `StatusPill` per row, arrow-key navigation) or `CountryDetailPanel` (inline autosaving `JournalFields`, remove with an `UndoToast`); a bottom sheet below `lg`. Selecting a country turns the map to it
+- `src/components/CountrySidebar.tsx` — sidebar: `CountryList` (Visited / Bucket list tabs, continent groups, `StatusPill` per row, arrow-key navigation) or `CountryDetailPanel` (inline autosaving `JournalFields`, a `VisitList` of the country's visits with `VisitEditor` and "Add another visit", remove with an `UndoToast`); a bottom sheet below `lg`. Selecting a country turns the map to it
+- `src/lib/countryVisits.ts` — pure list updates for extra visits (optimistic state in `App.tsx`; pending visits use negative ids)
 - `src/lib/auth.ts` — Better-Auth server config (DB adapter, Google provider)
 - `src/lib/auth-client.ts` — Better-Auth browser client
 - `src/types/` — shared `Country` and `VisitedCountry` TypeScript interfaces
@@ -71,7 +86,7 @@ created_at    TIMESTAMPTZ
 4. On first auth, localStorage data is migrated to the DB
 
 ### Vercel deployment
-`vercel.json` rewrites Better Auth requests to `api/auth/[...all].ts` and leaves other `/api/**` paths to their matching Vercel Functions. Non-API paths fall back to the Vite SPA. `server.ts` mirrors the custom API routes for local development.
+`vercel.json` rewrites Better Auth requests to `api/auth/[...all].ts` and leaves other `/api/**` paths to their matching Vercel Functions (`api/countries.ts`, `api/countries/visits.ts`, `api/public/stats.ts`; the two session-scoped ones share their auth + pool setup in `src/server/vercelApi.ts`). Non-API paths fall back to the Vite SPA. `server.ts` mirrors the custom API routes for local development.
 
 ## Coding Conventions
 
