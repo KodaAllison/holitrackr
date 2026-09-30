@@ -13,7 +13,7 @@ interface CountrySidebarProps {
   onSelect: (country: VisitedCountry) => void
   onBack: () => void
   onSetStatus: (country: VisitedCountry, status: Status) => void
-  onSaveJournal: (country: VisitedCountry, values: JournalValues) => void
+  onSaveJournal: (country: VisitedCountry, values: JournalValues) => Promise<void>
   onRemove: (country: VisitedCountry) => void
   onAddVisit: (country: VisitedCountry, values: JournalValues) => void
   onUpdateVisit: (id: number, values: JournalValues) => void
