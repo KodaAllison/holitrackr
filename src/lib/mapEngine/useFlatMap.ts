@@ -7,7 +7,7 @@ import { countryAt, type IndexedCountry } from './countryIndex'
 import { ease } from './globeMotion'
 import { CLUSTER_RADIUS, createHatch, drawMap, ShapeCache, type ViewTransform } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
-import { flatProjection } from './views'
+import { flatFit, flatProjection, NO_INSET, type MapInset } from './views'
 
 type Status = VisitedCountry['status']
 
@@ -28,6 +28,8 @@ export interface FlatMapOptions extends MapViewOptions {
   fitOnOpen?: boolean
   /** Receives the current pan/zoom, for the flat → globe morph. */
   viewRef?: React.MutableRefObject<ViewTransform | null>
+  /** Keep the world (and "Fit to my countries") clear of floating UI, e.g. the mobile sheet. */
+  inset?: MapInset
 }
 
 const MAX_ZOOM = 12
@@ -49,7 +51,9 @@ export function useFlatMap(options: FlatMapOptions) {
   const hatch = useRef<CanvasPattern | null>(null)
   const zoomBehavior = useRef<ZoomBehavior<HTMLCanvasElement, unknown> | null>(null)
 
-  const projection = useMemo(() => flatProjection(size), [size])
+  const { top, right, bottom, left } = options.inset ?? NO_INSET
+  const inset = useMemo(() => ({ top, right, bottom, left }), [top, right, bottom, left])
+  const projection = useMemo(() => flatProjection(size, inset), [size, inset])
   const shapes = useMemo(() => new ShapeCache(projection), [projection])
 
   const draw = useCallback(() => {
@@ -90,7 +94,8 @@ export function useFlatMap(options: FlatMapOptions) {
     const behavior = d3zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([1, MAX_ZOOM])
       .extent([[0, 0], [size.width, size.height]])
-      .translateExtent([[0, 0], [size.width, size.height]])
+      // The inset lets the view pan the world into the clear area, not past it.
+      .translateExtent([[-inset.left, -inset.top], [size.width + inset.right, size.height + inset.bottom]])
       // Only the user's own pans and zooms, not programmatic fits.
       .on('start', event => { if (event.sourceEvent) latest.current.onMoveStart() })
       .on('zoom', event => {
@@ -102,7 +107,7 @@ export function useFlatMap(options: FlatMapOptions) {
     selection.call(behavior).call(behavior.transform, zoomIdentity)
     zoomBehavior.current = behavior
     return () => { selection.on('.zoom', null) }
-  }, [canvasRef, size, requestDraw])
+  }, [canvasRef, size, inset, requestDraw])
 
   const fitAnim = useRef(0)
 
@@ -141,13 +146,11 @@ export function useFlatMap(options: FlatMapOptions) {
         const [[a, b], [cx, cy]] = shapes.bounds(c)
         x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, cx); y1 = Math.max(y1, cy)
       }
-      const k = Math.min(FIT_MAX_ZOOM, Math.max(1, 0.85 / Math.max((x1 - x0) / size.width, (y1 - y0) / size.height)))
-      target = zoomIdentity
-        .translate(size.width / 2 - k * (x0 + x1) / 2, size.height / 2 - k * (y0 + y1) / 2)
-        .scale(k)
+      const fit = flatFit([[x0, y0], [x1, y1]], size, inset, FIT_MAX_ZOOM)
+      target = zoomIdentity.translate(fit.x, fit.y).scale(fit.k)
     }
     animateTo(target)
-  }, [animateTo, shapes, size])
+  }, [animateTo, shapes, size, inset])
 
   /** The +/- buttons: zoom about the centre, within the zoom limits. */
   const zoomBy = useCallback((factor: number) => {

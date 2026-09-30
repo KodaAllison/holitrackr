@@ -5,7 +5,8 @@ import type { IndexedCountry } from '../lib/mapEngine/countryIndex'
 import { useWorldCountries } from '../lib/mapEngine/useWorldCountries'
 import type { ViewTransform } from '../lib/mapEngine/renderer'
 import type { MapViewOptions } from '../lib/mapEngine/useFlatMap'
-import { DEFAULT_GLOBE, type GlobeView } from '../lib/mapEngine/views'
+import { DEFAULT_GLOBE, type GlobeView, type MapInset } from '../lib/mapEngine/views'
+import { SHEET_PEEK } from '../lib/mobileSheet'
 import { introPlayed, markIntroPlayed, readMapView, writeMapView } from '../lib/mapViewPreference'
 import { SHOW_ALL, shownStatus } from '../lib/mapFilter'
 import { useMediaQuery } from '../lib/useMediaQuery'
@@ -17,6 +18,7 @@ import MapChrome from './MapChrome'
 import MapOverlays, { type Pointed } from './MapOverlays'
 import type { MapView } from './MapViewToggle'
 import MorphMapSurface from './MorphMapSurface'
+import MobileMapControls from './MobileMapControls'
 
 interface WorldMapProps {
   visitedCountries: VisitedCountry[]
@@ -27,9 +29,6 @@ interface WorldMapProps {
   selected?: CountryIdentity | null
   /** "‹ World view": close the open country (the map also zooms back out). */
   onWorldView?: () => void
-  /** Which marked countries are filled in; the "Show" filter edits it. */
-  filter?: MapFilter
-  onFilterChange?: (filter: MapFilter) => void
   /** The countries are still loading. */
   loading?: boolean
   /** Centred over the map once it is interactive (the first-run welcome card). */
@@ -38,6 +37,9 @@ interface WorldMapProps {
   quiet?: boolean
   /** Bring this country to the front (e.g. after picking it in search). */
   focus?: { country: Country; seq: number; pulse?: boolean } | null
+  /** Which marked countries to colour in (both when omitted); the desktop "Show" legend and mobile "Map filters" edit it. */
+  mapFilter?: MapFilter
+  onMapFilterChange?: (filter: MapFilter) => void
 }
 
 /** Desktop gets the globe (or flat, by choice); smaller screens are always flat. */
@@ -45,14 +47,17 @@ const DESKTOP_QUERY = '(min-width: 1024px)'
 const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
 const SURFACE = 'relative w-full h-full select-none'
 const IDENTITY: ViewTransform = { k: 1, x: 0, y: 0 }
+/** Mobile: fit the world to the part of the map between the floating search/chip and the sheet's peek. */
+const MOBILE_INSET: MapInset = { top: 116, right: 0, bottom: SHEET_PEEK + 8, left: 0 }
 const HINTS: Record<MapView, string> = {
   globe: 'Drag to spin · Scroll to zoom · Click a country to open it',
   flat: 'Click a country to open it',
 }
 
 export default function WorldMap(props: WorldMapProps) {
-  const { visitedCountries, onCountriesLoaded, onSelectCountry, selected, onWorldView, filter = SHOW_ALL } = props
-  const { onFilterChange, loading, welcome, quiet, focus } = props
+  const { visitedCountries, onCountriesLoaded, onSelectCountry, selected, onWorldView, mapFilter, onMapFilterChange } = props
+  const { loading, welcome, quiet, focus } = props
+  const filter = mapFilter ?? SHOW_ALL
   const desktop = useMediaQuery(DESKTOP_QUERY)
   const reducedMotion = useMediaQuery(REDUCED_QUERY)
   const { countries, motionCountries, failed } = useWorldCountries(onCountriesLoaded)
@@ -145,7 +150,12 @@ export default function WorldMap(props: WorldMapProps) {
           {overlays}
         </GlobeMapSurface>
       ) : (
-        <FlatMapSurface options={{ ...options, fitOnOpen: true, viewRef: flatView }} canFit={canFit} className={SURFACE}>
+        <FlatMapSurface
+          options={{ ...options, fitOnOpen: true, viewRef: flatView, inset: desktop ? undefined : MOBILE_INSET }}
+          canFit={canFit}
+          className={SURFACE}
+          controls={desktop ? undefined : fit => <MobileMapControls onFit={fit} filter={filter} onFilterChange={onMapFilterChange} />}
+        >
           {overlays}
         </FlatMapSurface>
       )}
@@ -161,8 +171,8 @@ export default function WorldMap(props: WorldMapProps) {
             selected={Boolean(selected)}
             onWorldView={() => { setWorldViewSeq(s => s + 1); onWorldView?.() }}
             filter={filter}
-            onFilterChange={f => onFilterChange?.(f)}
-            showLegend={Boolean(onFilterChange) && canFit}
+            onFilterChange={f => onMapFilterChange?.(f)}
+            showLegend={Boolean(onMapFilterChange) && canFit}
             hint={showHint ? HINTS[view] : null}
           />
           {welcome}
