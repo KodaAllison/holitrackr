@@ -1,30 +1,7 @@
-import { useState } from 'react'
 import type { VisitedCountry } from '../types'
-import { PRESET_TAGS, type JournalValues } from '../lib/journal'
-
-function StarRating({ value, onChange }: { value: number | undefined; onChange: (r: number | undefined) => void }) {
-  const [hovered, setHovered] = useState<number | null>(null)
-
-  return (
-    <div className="flex gap-1" onMouseLeave={() => setHovered(null)}>
-      {[1, 2, 3, 4, 5].map((star) => {
-        const active = hovered !== null ? star <= hovered : star <= (value ?? 0)
-        return (
-          <button
-            key={star}
-            type="button"
-            onMouseEnter={() => setHovered(star)}
-            onClick={() => onChange(value === star ? undefined : star)}
-            className={`text-2xl transition-colors leading-none ${active ? 'text-amber-400' : 'text-gray-200'} hover:text-amber-400`}
-            aria-label={`${star} star`}
-          >
-            ★
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+import type { JournalValues } from '../lib/journal'
+import StarRating from './StarRating'
+import TagPicker from './TagPicker'
 
 interface JournalFieldsProps {
   status: VisitedCountry['status']
@@ -35,10 +12,13 @@ interface JournalFieldsProps {
   autoFocusNotes?: boolean
 }
 
+const LABEL = 'flex flex-col gap-1.5 text-[13px] font-medium text-[#334155]'
+const INPUT = 'h-10 rounded-lg border border-[#C7D0D9] bg-white px-2.5 text-sm font-normal text-[#1E293B] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#DBEAFE]'
+
 /**
- * The journal form fields: when (or "Hoping to go" for the bucket list),
- * where, rating (visited only), tags and notes. Used by the detail panel
- * (autosaving) and the journal modal (Save / Cancel).
+ * The journal form fields: When (or "Hoping to go" for the bucket list),
+ * Where, Rating (visited only), Tags and Notes. Used by the detail panel
+ * (autosaving), extra visits and the journal modal (Save / Cancel).
  */
 export default function JournalFields({ status, values, onChange, idPrefix, autoFocusNotes }: JournalFieldsProps) {
   const { notes, place, visitedAt, rating, tags } = values
@@ -46,79 +26,46 @@ export default function JournalFields({ status, values, onChange, idPrefix, auto
   const toggleTag = (tag: string) => set({ tags: tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag] })
 
   return (
-    <>
-        {/* Visit date; for the bucket list the same field is "Hoping to go" */}
-        <div>
-          <label htmlFor={`${idPrefix}-when`} className="text-sm text-gray-500 mb-1 block">
-            {status === 'visited' ? 'When did you visit?' : 'Hoping to go'}
-          </label>
-          <input
-            id={`${idPrefix}-when`}
-            type="month"
-            value={visitedAt}
-            onChange={e => set({ visitedAt: e.target.value })}
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
+    <div className="flex flex-col gap-3">
+      <label htmlFor={`${idPrefix}-when`} className={LABEL}>
+        {status === 'visited' ? 'When' : 'Hoping to go'}
+        <input id={`${idPrefix}-when`} type="month" value={visitedAt} onChange={e => set({ visitedAt: e.target.value })} className={INPUT} />
+      </label>
+
+      <label htmlFor={`${idPrefix}-place`} className={LABEL}>
+        Where
+        <input
+          id={`${idPrefix}-place`}
+          type="text"
+          value={place}
+          maxLength={120}
+          onChange={e => set({ place: e.target.value })}
+          placeholder="e.g. Kyoto & Osaka"
+          className={INPUT}
+        />
+      </label>
+
+      {status === 'visited' && (
+        <div className="flex flex-col gap-1.5 text-[13px] font-medium text-[#334155]">
+          <span>Rating</span>
+          <StarRating value={rating} onChange={r => set({ rating: r })} />
         </div>
+      )}
 
-        {/* Place */}
-        <div>
-          <label htmlFor={`${idPrefix}-place`} className="text-sm text-gray-500 mb-1 block">
-            {status === 'visited' ? 'Where?' : 'Where to?'}
-          </label>
-          <input
-            id={`${idPrefix}-place`}
-            type="text"
-            value={place}
-            maxLength={120}
-            onChange={e => set({ place: e.target.value })}
-            placeholder="e.g. Kyoto & Osaka"
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-        </div>
+      <TagPicker tags={tags} onToggle={toggleTag} />
 
-        {/* Star Rating — visited only */}
-        {status === 'visited' && (
-          <div>
-            <label className="text-sm text-gray-500 mb-1.5 block">Rating</label>
-            <StarRating value={rating} onChange={r => set({ rating: r })} />
-          </div>
-        )}
-
-        {/* Tags */}
-        <div>
-          <label className="text-sm text-gray-500 mb-2 block">Tags</label>
-          <div className="flex flex-wrap gap-1.5">
-            {PRESET_TAGS.map(tag => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => toggleTag(tag)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                  tags.includes(tag)
-                    ? 'bg-blue-500 text-white border-blue-500'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-500'
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Notes */}
-        <div>
-          <label className="text-sm text-gray-500 mb-1 block">Notes</label>
-          <textarea
-            autoFocus={autoFocusNotes}
-            value={notes}
-            onChange={e => set({ notes: e.target.value })}
-            placeholder="e.g. Hiked the Inca Trail…"
-            rows={4}
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-        </div>
-
-    </>
+      <label htmlFor={`${idPrefix}-notes`} className={LABEL}>
+        Notes
+        <textarea
+          id={`${idPrefix}-notes`}
+          autoFocus={autoFocusNotes}
+          value={notes}
+          onChange={e => set({ notes: e.target.value })}
+          placeholder="e.g. Hiked the Inca Trail…"
+          rows={4}
+          className="resize-none rounded-lg border border-[#C7D0D9] bg-white px-3 py-2.5 text-sm font-normal leading-normal text-[#1E293B] focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#DBEAFE]"
+        />
+      </label>
+    </div>
   )
 }

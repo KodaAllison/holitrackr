@@ -21,22 +21,25 @@ export default function VisitEditor({ initial, idPrefix, saveLabel, onSave, onCa
   const dated = isVisitMonth(values.visitedAt)
 
   return (
-    <div className="space-y-4 rounded-lg border border-blue-100 bg-gray-50 p-3">
+    <div
+      className="flex flex-col gap-3 rounded-[10px] border border-[#C7D0D9] bg-[#F7F9FB] p-3"
+      onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); onCancel() } }}
+    >
       <JournalFields status="visited" values={values} onChange={setValues} idPrefix={idPrefix} />
-      {!dated && <p className="text-xs text-gray-500">Add the month of this visit to save it.</p>}
+      {!dated && <p className="text-[13px] text-[#5B6675]">Add the month of this visit to save it.</p>}
       <div className="flex gap-2">
         <button
           type="button"
           disabled={!dated}
           onClick={() => onSave(values)}
-          className="flex-1 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="h-10 flex-1 rounded-lg bg-[#2563EB] text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saveLabel}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="flex-1 py-2 text-sm font-medium bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-100"
+          className="h-10 flex-1 rounded-lg border border-[#C7D0D9] bg-white text-sm font-medium text-[#334155] hover:bg-[#EEF2F6]"
         >
           Cancel
         </button>
