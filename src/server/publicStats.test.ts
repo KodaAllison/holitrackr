@@ -10,8 +10,8 @@ describe('public stats HTTP contract', () => {
         { country_code: 'ESP', country_name: 'Madrid, 2026-09', notes: 'private', user_id: 'owner' },
         { country_code: '-99', country_name: 'France', visit_date: '2026-05-01' },
         { country_code: '-99', country_name: 'Norway', rating: 5 },
-        { country_code: '-99', country_name: 'Kosovo', tags: '["private"]' },
-        { country_code: 'ESP', country_name: 'Spain' },
+        { country_code: '-99', country_name: 'Kosovo', tags: '["private"]', place: 'Pristina' },
+        { country_code: 'ESP', country_name: 'Spain', visits: [{ id: 1, visitedAt: '2019-03', place: 'Seville' }] },
         { country_code: '-99', country_name: 'Northern Cyprus' },
         { country_code: '-99', country_name: 'Somaliland' },
         { country_code: 'ZZZ', country_name: 'Unknown' },
@@ -39,7 +39,7 @@ describe('public stats HTTP contract', () => {
       continents: ['Europe'],
       generatedAt: '2026-09-01T12:00:00.000Z',
     })
-    expect(JSON.stringify(response.body)).not.toMatch(/notes|visit_date|rating|tags|user_id/)
+    expect(JSON.stringify(response.body)).not.toMatch(/notes|visit_date|visitedAt|visits|rating|tags|place|Pristina|Seville|user_id/)
   })
 
   it('queries only public columns for the configured owner', async () => {
@@ -57,6 +57,9 @@ describe('public stats HTTP contract', () => {
       expect.stringMatching(/^\s*SELECT country_code, country_name\s+FROM visited_countries\s+WHERE user_id = \$1 AND status = 'visited'\s*$/),
       ['portfolio-owner'],
     )
+    // Extra visits (country_visits) are private journal data: never read here.
+    expect(query).toHaveBeenCalledTimes(1)
+    expect(query.mock.calls[0][0]).not.toMatch(/country_visits/)
   })
 
   it('repairs -99 only when the stored name exactly matches an approved case', async () => {

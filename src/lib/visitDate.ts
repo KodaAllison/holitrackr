@@ -34,8 +34,14 @@ export function toStoredVisitDate(value: unknown): string | null {
 }
 
 /** A stored `YYYY-MM-DD` DATE value → `YYYY-MM`. */
-export function fromStoredVisitDate(stored: string | null): string | undefined {
-  return stored ? stored.slice(0, 7) : undefined
+export function fromStoredVisitDate(stored: string | Date | null): string | undefined {
+  if (!stored) return undefined
+  // Defensive: a raw DATE from pg is a local-midnight Date; use local fields
+  // (toISOString could roll back into the previous month).
+  if (stored instanceof Date) {
+    return `${stored.getFullYear()}-${String(stored.getMonth() + 1).padStart(2, '0')}`
+  }
+  return stored.slice(0, 7)
 }
 
 /** Full month name for a 1-12 month, e.g. `8` → "August". */

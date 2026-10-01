@@ -14,7 +14,31 @@ export interface VisitedCountry {
   name: string
   status: 'visited' | 'bucketlist'
   notes?: string
+  /** Where in the country, free text (e.g. "Kyoto & Osaka"). */
+  place?: string
   visitedAt?: string
   rating?: number
   tags?: string[]
+  /**
+   * Extra visits after the first, oldest first. The fields above are the
+   * country's first (primary) visit; these come from `country_visits`.
+   */
+  visits?: CountryVisit[]
+}
+
+/** One extra visit to a country, with its own journal. */
+export interface CountryVisit {
+  id: number
+  /** `YYYY-MM`; every extra visit has a date. */
+  visitedAt: string
+  place?: string
+  rating?: number
+  notes?: string
+  tags?: string[]
+}
+
+/** Which marked countries the map colours in (the rest draw as unmarked). */
+export interface MapFilter {
+  visited: boolean
+  bucketlist: boolean
 }

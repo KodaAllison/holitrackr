@@ -8,10 +8,31 @@ import type {
 import type { VisitedCountry } from '../types/country.js'
 import { fromStoredVisitDate, toStoredVisitDate } from '../lib/visitDate.js'
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
+export function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined
+}
+
+/** Longest place text we store; longer input is cut, not rejected. */
+export const MAX_PLACE_LENGTH = 120
+
+export function parsePlace(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const place = value.trim().slice(0, MAX_PLACE_LENGTH)
+  return place === '' ? null : place
+}
+
+/** A 1-5 rating (rounded), or null for anything else. */
+export function parseRating(value: unknown): number | null {
+  return typeof value === 'number' && value >= 1 && value <= 5 ? Math.round(value) : null
+}
+
+/** Tags as the stored JSON array text (strings only), or null if not an array. */
+export function parseTags(value: unknown): string | null {
+  return Array.isArray(value)
+    ? JSON.stringify(value.filter((tag): tag is string => typeof tag === 'string'))
+    : null
 }
 
 export function parseCountryIdentity(value: unknown): CountryIdentity | undefined {
@@ -48,13 +69,10 @@ export function parseUpdateCountryInput(value: unknown): UpdateCountryInput | un
   return {
     ...identity,
     notes: typeof body.notes === 'string' ? body.notes : null,
+    place: parsePlace(body.place),
     visitDate: toStoredVisitDate(body.visitedAt),
-    rating: typeof body.rating === 'number' && body.rating >= 1 && body.rating <= 5
-      ? Math.round(body.rating)
-      : null,
-    tags: Array.isArray(body.tags)
-      ? JSON.stringify(body.tags.filter((tag): tag is string => typeof tag === 'string'))
-      : null,
+    rating: parseRating(body.rating),
+    tags: parseTags(body.tags),
   }
 }
 
@@ -83,6 +101,7 @@ export function serializeStoredCountry(
     name: row.country_name,
     status: parseStoredStatus(row.status),
     notes: row.notes ?? undefined,
+    place: row.place ?? undefined,
     visitedAt: fromStoredVisitDate(row.visit_date),
     rating: row.rating ?? undefined,
     tags: parseStoredTags(row.tags),

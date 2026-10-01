@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import type { QueryResultRow } from 'pg';
 import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
 import { createServer as createViteServer } from 'vite';
 import { auth, authConfig } from './src/lib/auth';
@@ -7,16 +8,26 @@ import {
   parseCountryIdentity,
   parseCreateCountryInput,
   parseUpdateCountryInput,
-  serializeStoredCountry,
 } from './src/server/countryPayloads';
+import {
+  deleteCountry,
+  handleCountryVisitsRequest,
+  listCountries,
+  resetCountries,
+  type CountriesDatabase,
+} from './src/server/countryVisits';
 import { runDatabaseMigrations } from './src/server/databaseMigrations';
 import { handlePublicStatsRequest } from './src/server/publicStats';
-import type { StoredCountryRow } from './src/types/countriesApi';
 import type { PublicCountryRow } from './src/types/publicStats';
 
 function isMalformedJsonError(error: unknown): error is SyntaxError & { status: 400 } {
   return error instanceof SyntaxError && 'status' in error && error.status === 400;
 }
+
+const database: CountriesDatabase = {
+  query: <Row extends QueryResultRow>(statement: string, parameters: unknown[]) =>
+    authConfig.database.query<Row>(statement, parameters),
+};
 
 async function createServer() {
   const app = express();
@@ -75,15 +86,24 @@ async function createServer() {
     const userId = session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { rows } = await authConfig.database.query<StoredCountryRow>(
-      `SELECT country_code, country_name, status, notes, visit_date, rating, tags
-       FROM visited_countries
-       WHERE user_id = $1
-       ORDER BY visit_date DESC NULLS LAST, created_at DESC`,
-      [userId]
-    );
+    return res.json(await listCountries(database, userId));
+  });
 
-    return res.json(rows.map(serializeStoredCountry));
+  // A country's extra visits (FEATURES.md #8); logic shared with api/countries/visits.ts.
+  app.all('/api/countries/visits', async (req, res) => {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    });
+
+    const response = await handleCountryVisitsRequest({
+      method: req.method,
+      userId: session?.user?.id,
+      body: req.body,
+      database,
+    });
+
+    if (response.body) return res.status(response.status).json(response.body);
+    return res.status(response.status).end();
   });
 
   app.post('/api/countries', async (req, res) => {
@@ -126,9 +146,9 @@ async function createServer() {
     }
 
     await authConfig.database.query(
-      `UPDATE visited_countries SET notes = $1, visit_date = $2, rating = $3, tags = $4
-       WHERE user_id = $5 AND country_code = $6 AND country_name = $7`,
-      [input.notes, input.visitDate, input.rating, input.tags, userId, input.code, input.name]
+      `UPDATE visited_countries SET notes = $1, place = $2, visit_date = $3, rating = $4, tags = $5
+       WHERE user_id = $6 AND country_code = $7 AND country_name = $8`,
+      [input.notes, input.place, input.visitDate, input.rating, input.tags, userId, input.code, input.name]
     );
 
     return res.status(204).end();
@@ -143,10 +163,9 @@ async function createServer() {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     const reset = req.query.reset;
-    const pool = authConfig.database;
 
     if (reset === 'true') {
-      await pool.query(`DELETE FROM visited_countries WHERE user_id = $1`, [userId]);
+      await resetCountries(database, userId);
       return res.status(204).end();
     }
 
@@ -155,11 +174,7 @@ async function createServer() {
       return res.status(400).json({ error: 'Invalid payload' });
     }
 
-    await pool.query(
-      `DELETE FROM visited_countries
-       WHERE user_id = $1 AND country_code = $2 AND country_name = $3`,
-      [userId, identity.code, identity.name]
-    );
+    await deleteCountry(database, userId, identity);
 
     return res.status(204).end();
   });

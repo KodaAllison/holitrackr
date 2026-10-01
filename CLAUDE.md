@@ -26,12 +26,12 @@ npm run preview      # Vite preview of production build
 
 **HoliTrackr (MyAtlas)** is a full-stack travel tracking app where users mark countries they've visited on an interactive world map.
 
-**Stack:** React 18 + TypeScript + Vite + Tailwind + Leaflet (frontend), Express 5 + Better-Auth + PostgreSQL (backend), deployed to Vercel.
+**Stack:** React 18 + TypeScript + Vite + Tailwind + d3-geo canvas map (frontend), Express 5 + Better-Auth + PostgreSQL (backend), deployed to Vercel.
 
 ### Server (`server.ts`)
 The single entry point for the backend. It:
 - Mounts Better-Auth middleware at `/api/auth/**` for Google OAuth + session handling
-- Exposes REST endpoints under `/api/countries` (GET, POST, DELETE, PATCH)
+- Exposes REST endpoints under `/api/countries` (GET, POST, DELETE, PATCH) and `/api/countries/visits` (POST, PATCH, DELETE: extra visits)
 - Runs Vite as middleware in dev mode; serves `/dist` in production
 - Runs the shared PostgreSQL migrations on startup from `src/server/databaseMigrations.ts`
 
@@ -42,16 +42,39 @@ country_code  TEXT
 country_name  TEXT
 status        TEXT        ('visited' | 'bucketlist')
 notes         TEXT
-visit_date    DATE        (stored as YYYY-MM-01; API serialises as visitedAt: YYYY-MM)
+place         TEXT        (free text, max 120 chars, e.g. "Kyoto & Osaka")
+visit_date    DATE        (stored as YYYY-MM-01; API serialises as visitedAt: YYYY-MM;
+                           for bucket-list rows it means "Hoping to go")
+rating        INTEGER     (1-5 or NULL; CHECK constraint)
+tags          TEXT        (JSON array of strings; API serialises as tags: string[])
 created_at    TIMESTAMPTZ
 ```
+The journal columns above are the country's **first visit**. Extra visits
+(FEATURES.md #8) live in **`country_visits`** (added, never backfilled; the
+API returns them as `visits` on each country, oldest first):
+```
+id            SERIAL PK
+user_id       TEXT        (REFERENCES "user"(id) ON DELETE CASCADE)
+country_code  TEXT        ┐ same identity as visited_countries;
+country_name  TEXT        ┘ indexed with user_id
+visit_date    DATE NOT NULL (YYYY-MM-01; API: visitedAt YYYY-MM)
+place, rating, notes, tags  (as on visited_countries; rating CHECK 1-5 or NULL)
+created_at    TIMESTAMPTZ
+```
+Removing a country (or Reset) deletes its `country_visits` rows in the same
+statement. Shared query/handler logic is in `src/server/countryVisits.ts`.
 
 ### Frontend (`src/`)
 - `App.tsx` — top-level state owner: session, visited countries array, toggle/remove/reset logic, localStorage migration
-- `src/components/WorldMap.tsx` — Leaflet map; country clicks bubble up via callback
-- `src/components/Header.tsx` — navbar; accepts optional `user` prop to render `UserMenu`
-- `src/components/Stats.tsx` — visited/bucket-list counts bar
-- `src/components/VisitedCountriesList.tsx` — sidebar list with remove, reset, journal edit
+- `src/components/WorldMap.tsx` — canvas world map: spinnable globe on desktop (`GlobeMapSurface`) with a Globe / Flat toggle that unrolls between them (`MorphMapSurface`, choice kept in localStorage), after a once-per-session startup intro (`IntroMapSurface`, timing in `src/lib/introTimeline.ts`); always flat below `lg` (`FlatMapSurface`); country clicks bubble up via callback
+- `src/lib/mapEngine/` — the map engine: country index + hit-testing, micro-state clustering, canvas renderer, `useFlatMap` (d3-zoom) and `useGlobeMap` (drag/inertia/idle spin, great-circle turns) hooks
+- `src/lib/worldAtlas.ts` — loads the compact country TopoJSON in `src/data/` (`motion` or `detail`); rebuild the data with `node scripts/build-world-atlas.mjs`
+- `src/components/TripTimeline.tsx` — timeline v2, filling the shell's full-height slot below the bar (`h-full min-h-0`): on `lg` a split of `TimelineMap` (map fills in, great-circle legs, "Your atlas in …" chip) + `TimelineRuler` (draggable playhead, `TimelineRulerMarks`, Prev / Play / Next) beside a scrolling `TimelineFeed` ("Your journey": year groups of `TimelineTripCard`, oldest first, then `TimelineNextSection` for dated bucket-list plans and `TimelineUndatedSection` with "Add a date"); stacked below `lg`. Data from `src/lib/timelineModel.ts`
+- `src/components/SignInScreen.tsx` — signed-out "atlas plate": dark globe touring a demo journey (`src/lib/signInTour.ts`, drawn by `mapEngine/drawSignIn.ts`) and Continue with Google. Uses self-hosted Instrument Serif + JetBrains Mono (`@fontsource`), a deliberate exception to the palette/fonts rule scoped to this screen
+- App shell (Atlas v2): `src/components/AppBar.tsx` — 64px white bar with the MyAtlas mark, `ViewSwitch` (Map / Timeline), `CountrySearch` in the middle ("/" focuses it) and `UserMenu` (avatar); full-height map + 360px sidebar below it on `lg`, no footer. Below `lg` the map view has no bar: a full-screen (100dvh) flat map with the floating search + avatar (a `MobileBackButton` replaces the avatar, before the search, while a country is selected), `MobileMapControls` on the right ("Fit to my countries", and "Map filters" with Visited / Bucket list checkboxes driving App's `mapFilter`), failed marks/removes shown by `ErrorToast` with Retry; the bar returns in the timeline view. Session check shows `LoadingScreen`
+- Map chrome (desktop, `MapChrome.tsx`): top-left the Globe / Flat toggle beside `MapSummaryChip` (progress bar, "n of 195 countries", "n of 7 continents"; a placeholder while loading; on mobile the count + colour key under the search), or a "‹ World view" pill while a country is open (zooms back out via `worldViewSeq`); bottom-left `MapLegend`, the "Show" fieldset whose Visited / Bucket list checkboxes hide those fills (App's `mapFilter`, shared with the mobile Map filters popover; helpers in `src/lib/mapFilter.ts`); bottom-centre a how-to hint until the first map interaction; bottom-right `MapZoomStack` (zoom in / out / "Fit to my countries", owned by each surface; globe fit maths is `fitGlobe` in `mapEngine/globeMotion.ts`). `MapOverlays` is the dark hover tooltip. There is no click popup or modal: a map click opens the country in the sidebar (outlined 2.5px blue on the map), and marking shows an Undo `Toast` bottom-centre of the map (`Toast` / `ErrorToast` stack in `ToastStack`; below `lg` just above the sheet's peek). First run shows `MapWelcomeCard` ("Start your atlas", its own `CountrySearch welcome`) over the map until dismissed or something is marked. Below `lg` the flat map's world view and fit keep clear of the floating search and the sheet peek (`inset` on `useFlatMap`, `flatProjection` / `flatFit` in `mapEngine/views.ts`)
+- `src/components/CountrySidebar.tsx` — sidebar, a full-height `<aside>` (its own left border on `lg`; the shell's wrapper has none): `CountryList` ("Your countries" with a `SortMenu` — continent / date / name, grouping in `src/lib/countryListModel.ts` — and the mobile `TimelineButton` beside it; Visited / Bucket list tabs; a `CountryRow` per country with a hover/focus status pill; arrow-key navigation; `KeyboardLegend` footer; `SidebarEmpty` / `SidebarSkeleton` states, the skeleton while `App.tsx` loads the countries) or `CountryMarkPanel` (an unmarked country clicked on the map: Visited / Bucket list) or `CountryDetailPanel` (`StatusControl`, inline autosaving `JournalFields` with `StarRating`, `TagPicker` and `AutosaveStatus`, a `VisitList` of the country's visits with `VisitEditor` and "Add another visit"; removing shows an Undo `Toast`); below `lg` everything sits in a draggable `MobileSheet` over the map (256px peek, handle drag/tap to expand, snap maths in `src/lib/mobileSheet.ts`): the list with a `TimelineButton`, or a selected country's `MobileCountrySummary` whose "Edit journal" expands into `CountryDetailPanel`, or an unmarked tapped country's `CountryMarkPanel`. Selecting a country turns the map to it
+- `src/lib/countryVisits.ts` — pure list updates for extra visits (optimistic state in `App.tsx`; pending visits use negative ids)
 - `src/lib/auth.ts` — Better-Auth server config (DB adapter, Google provider)
 - `src/lib/auth-client.ts` — Better-Auth browser client
 - `src/types/` — shared `Country` and `VisitedCountry` TypeScript interfaces
@@ -63,7 +86,7 @@ created_at    TIMESTAMPTZ
 4. On first auth, localStorage data is migrated to the DB
 
 ### Vercel deployment
-`vercel.json` rewrites Better Auth requests to `api/auth/[...all].ts` and leaves other `/api/**` paths to their matching Vercel Functions. Non-API paths fall back to the Vite SPA. `server.ts` mirrors the custom API routes for local development.
+`vercel.json` rewrites Better Auth requests to `api/auth/[...all].ts` and leaves other `/api/**` paths to their matching Vercel Functions (`api/countries.ts`, `api/countries/visits.ts`, `api/public/stats.ts`; the two session-scoped ones share their auth + pool setup in `src/server/vercelApi.ts`). Non-API paths fall back to the Vite SPA. `server.ts` mirrors the custom API routes for local development.
 
 ## Coding Conventions
 
@@ -95,6 +118,22 @@ created_at    TIMESTAMPTZ
 - `fix/<short-name>` — bug fix branches
 - Squash-merge PRs to keep main history clean
 - PR description should reference the feature from `FEATURES.md` and include a brief test plan
+
+### Atlas v2 trunk
+
+The Atlas v2 redesign (FEATURES.md, "Atlas v2 redesign") is too big to land on
+`main` piecemeal, so it has its own long-lived trunk:
+
+- `atlas-v2` — branched from `main`. Every redesign ticket branches
+  `feat/<name>` off `atlas-v2` and PRs back into `atlas-v2`, never `main`.
+- Merge `main` into `atlas-v2` regularly (a merge commit, not a rebase) so
+  fixes on `main` reach the redesign and conflicts stay small.
+- `atlas-v2` → `main` only when a milestone is releasable, via one PR with a
+  test plan covering the whole milestone.
+- Vercel builds a preview deployment for every pushed branch, so `atlas-v2`
+  and its PRs each get a preview URL. Check the redesign there, not on
+  production.
+- Non-redesign fixes still go `fix/<name>` → `main`.
 
 ## Adding a New API Endpoint
 

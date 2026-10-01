@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_PLACE_LENGTH,
   parseStoredStatus,
   parseUpdateCountryInput,
   serializeStoredCountry,
@@ -15,6 +16,24 @@ describe('country payload parsing', () => {
       .toMatchObject({ visitDate: null })
   })
 
+  it('trims place, caps its length, and stores blank as null', () => {
+    expect(parseUpdateCountryInput({ code: 'JPN', name: 'Japan', place: '  Kyoto & Osaka ' }))
+      .toMatchObject({ place: 'Kyoto & Osaka' })
+    expect(parseUpdateCountryInput({ code: 'JPN', name: 'Japan', place: '   ' }))
+      .toMatchObject({ place: null })
+    expect(parseUpdateCountryInput({ code: 'JPN', name: 'Japan', place: 42 }))
+      .toMatchObject({ place: null })
+    expect(parseUpdateCountryInput({ code: 'JPN', name: 'Japan', place: 'x'.repeat(500) })?.place)
+      .toHaveLength(MAX_PLACE_LENGTH)
+  })
+
+  it('omits place from the DTO when none is stored', () => {
+    expect(serializeStoredCountry({
+      country_code: 'JPN', country_name: 'Japan', status: 'bucketlist',
+      notes: null, place: null, visit_date: '2027-04-01', rating: null, tags: null,
+    })).toEqual({ code: 'JPN', name: 'Japan', status: 'bucketlist', visitedAt: '2027-04' })
+  })
+
   it('normalizes persisted statuses to the public country contract', () => {
     expect(parseStoredStatus('visited')).toBe('visited')
     expect(parseStoredStatus('bucketlist')).toBe('bucketlist')
@@ -27,6 +46,7 @@ describe('country payload parsing', () => {
       country_name: 'Spain',
       status: 'visited',
       notes: 'Summer',
+      place: 'Barcelona',
       visit_date: '2026-08-01',
       rating: 5,
       tags: '["food",2,"beach"]',
@@ -35,6 +55,7 @@ describe('country payload parsing', () => {
       name: 'Spain',
       status: 'visited',
       notes: 'Summer',
+      place: 'Barcelona',
       visitedAt: '2026-08',
       rating: 5,
       tags: ['food', 'beach'],

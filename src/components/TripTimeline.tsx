@@ -1,140 +1,85 @@
+import { useEffect, useMemo, useState } from 'react'
 import type { VisitedCountry } from '../types'
-import { countryKey, withStatus } from '../lib/visitedCountries'
-import { monthName, parseVisitMonth } from '../lib/visitDate'
+import { withStatus } from '../lib/visitedCountries'
+import { buildTimeline } from '../lib/timelineModel'
+import { useMediaQuery } from '../lib/useMediaQuery'
+import TimelineFeed from './TimelineFeed'
+import TimelineMap from './TimelineMap'
+import TimelineRuler from './TimelineRuler'
 
 interface TripTimelineProps {
   visitedCountries: VisitedCountry[]
+  onOpenJournal?: (country: VisitedCountry) => void
 }
 
-interface TimelineEntry {
-  country: VisitedCountry
-  month: number
-}
+/** How long Play lingers on each trip. */
+const STEP_MS = 1400
 
-export default function TripTimeline({ visitedCountries }: TripTimelineProps) {
+/**
+ * Timeline v2: scrub your journey. Full-bleed, filling the slot it is given:
+ * the map and ruler on the left (~60%), the feed (oldest first) on the right.
+ * The map fills in as the playhead moves; Play steps through every trip.
+ * Below `lg` the two stack and the whole view scrolls.
+ */
+export default function TripTimeline({ visitedCountries, onOpenJournal }: TripTimelineProps) {
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+  const model = useMemo(() => buildTimeline(visitedCountries, new Date()), [visitedCountries])
+  const [chosen, setChosen] = useState<number | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const last = model.trips.length - 1
+  // Default to the newest trip; a choice past the end (after a removal) clamps.
+  const active = chosen === null ? last : Math.min(chosen, last)
   const visited = withStatus(visitedCountries, 'visited')
 
-  const withDate: { year: number; entries: TimelineEntry[] }[] = []
-  const noDate: VisitedCountry[] = []
-  const yearMap = new Map<number, TimelineEntry[]>()
+  useEffect(() => {
+    if (!playing) return
+    const timer = window.setInterval(() => {
+      setChosen(i => {
+        const next = (i ?? last) + 1
+        if (next >= last) setPlaying(false)
+        return Math.min(next, last)
+      })
+    }, STEP_MS)
+    return () => window.clearInterval(timer)
+  }, [playing, last])
 
-  for (const country of visited) {
-    const parsed = parseVisitMonth(country.visitedAt)
-    if (!parsed) {
-      noDate.push(country)
-      continue
-    }
-    const { year, month } = parsed
-    const existing = yearMap.get(year)
-    const entry: TimelineEntry = { country, month }
-    if (existing) {
-      existing.push(entry)
-    } else {
-      yearMap.set(year, [entry])
-    }
+  const togglePlay = () => {
+    if (playing) return setPlaying(false)
+    // From the end, Play restarts the journey from the first trip.
+    if (active >= last) setChosen(0)
+    setPlaying(true)
   }
-
-  // Sort years descending, entries within each year by month ascending
-  const sortedYears = [...yearMap.keys()].sort((a, b) => b - a)
-  for (const year of sortedYears) {
-    // safe: year came from yearMap.keys()
-    const entries = yearMap.get(year)!
-    entries.sort((a, b) => a.month - b.month)
-    withDate.push({ year, entries })
-  }
+  const pick = (i: number) => { setPlaying(false); setChosen(i) }
 
   if (visited.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-        <svg className="w-12 h-12 mb-4 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="h-full min-h-[320px] flex flex-col items-center justify-center bg-[#F8FAFC] px-4 text-center text-[#5B6675]">
+        <svg className="w-10 h-10 mb-4 text-[#94A3B8]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
             d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
-        <p className="text-sm">No visited countries yet.</p>
-        <p className="text-xs mt-1">Mark countries as visited on the map to see your timeline.</p>
+        <p className="text-[15px] font-semibold text-[#1E293B]">No trips yet</p>
+        <p className="text-sm mt-1">Mark countries as visited on the map to see your journey here.</p>
       </div>
     )
   }
 
-  if (withDate.length === 0 && noDate.length > 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-        <svg className="w-12 h-12 mb-4 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
-        <p className="text-sm font-medium">No visit dates recorded.</p>
-        <p className="text-xs mt-1">Edit the journal for each country to add when you visited.</p>
-      </div>
-    )
-  }
-
+  const hasTrips = model.trips.length > 0
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      {withDate.map(({ year, entries }) => (
-        <div key={year} className="mb-10">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="text-2xl font-bold text-gray-800">{year}</span>
-            <span className="text-sm text-gray-400 font-medium">
-              {entries.length} {entries.length === 1 ? 'country' : 'countries'}
-            </span>
-          </div>
-
-          <div className="relative ml-3">
-            {/* vertical line */}
-            <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-200" />
-
-            <div className="space-y-4 pl-6">
-              {entries.map(({ country, month }) => (
-                <div key={countryKey(country)} className="relative">
-                  {/* dot on the line */}
-                  <span className="absolute -left-[27px] top-[6px] w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
-
-                  <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-semibold text-gray-800">{country.name}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">{monthName(month)} {year}</p>
-                      </div>
-                    </div>
-                    {country.notes && (
-                      <p className="mt-2 text-sm text-gray-500 leading-relaxed">{country.notes}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      ))}
-
-      {noDate.length > 0 && (
-        <div className="mb-10">
-          <div className="flex items-center gap-3 mb-4">
-            <span className="text-lg font-semibold text-gray-400">No date recorded</span>
-            <span className="text-sm text-gray-400">
-              {noDate.length} {noDate.length === 1 ? 'country' : 'countries'}
-            </span>
-          </div>
-
-          <div className="relative ml-3">
-            <div className="absolute left-0 top-0 bottom-0 w-px bg-gray-100" />
-            <div className="space-y-3 pl-6">
-              {noDate.map(country => (
-                <div key={countryKey(country)} className="relative">
-                  <span className="absolute -left-[27px] top-[6px] w-2.5 h-2.5 rounded-full bg-gray-300 ring-2 ring-white" />
-                  <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3">
-                    <p className="font-medium text-gray-600">{country.name}</p>
-                    {country.notes && (
-                      <p className="mt-1 text-sm text-gray-400 leading-relaxed">{country.notes}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+    <div className="h-full min-h-0 flex flex-col overflow-y-auto lg:flex-row lg:overflow-hidden text-[#1E293B]">
+      {hasTrips && (
+        <section aria-label="Journey map and time scrubber" className="flex flex-col shrink-0 bg-[#DCE6EE] lg:w-[60%] lg:min-h-0">
+          <TimelineMap model={model} active={active} reducedMotion={reducedMotion} />
+          <TimelineRuler model={model} active={active} playing={playing} onChange={pick} onTogglePlay={togglePlay} />
+        </section>
       )}
+      <TimelineFeed
+        model={model}
+        active={hasTrips ? active : -1}
+        reducedMotion={reducedMotion}
+        onPick={pick}
+        onOpenJournal={onOpenJournal}
+      />
     </div>
   )
 }

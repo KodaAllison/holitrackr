@@ -1,208 +1,195 @@
-import { MapContainer, TileLayer, GeoJSON, Popup } from 'react-leaflet'
-import { useEffect, useState, useRef } from 'react'
-import type { Feature, FeatureCollection, GeoJsonProperties, Geometry } from 'geojson'
-import type { PathOptions } from 'leaflet'
-import type { TooltipOptions } from 'leaflet'
-import type { GeoJSON as LeafletGeoJSON } from 'leaflet'
-import type { Country, VisitedCountry } from '../types'
-import { findCountry } from '../lib/visitedCountries'
-import { featureIdentity, featureName } from '../lib/featureIdentity'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { Country, MapFilter, VisitedCountry } from '../types'
+import { countryKey, type CountryIdentity } from '../lib/visitedCountries'
+import type { IndexedCountry } from '../lib/mapEngine/countryIndex'
+import { useWorldCountries } from '../lib/mapEngine/useWorldCountries'
+import type { ViewTransform } from '../lib/mapEngine/renderer'
+import type { MapViewOptions } from '../lib/mapEngine/useFlatMap'
+import { DEFAULT_GLOBE, NO_INSET, type GlobeView, type MapInset } from '../lib/mapEngine/views'
+import { SHEET_PEEK } from '../lib/mobileSheet'
+import { introPlayed, markIntroPlayed, readMapView, writeMapView } from '../lib/mapViewPreference'
+import { SHOW_ALL, shownStatus } from '../lib/mapFilter'
+import { useMediaQuery } from '../lib/useMediaQuery'
+import { useSelectedLabel } from '../lib/useSelectedLabel'
+import FlatMapSurface from './FlatMapSurface'
+import GlobeMapSurface from './GlobeMapSurface'
+import IntroMapSurface from './IntroMapSurface'
+import { atlasProgress } from '../lib/atlasProgress'
+import MapChrome from './MapChrome'
+import MapOverlays, { type Pointed } from './MapOverlays'
+import type { MapView } from './MapViewToggle'
+import MorphMapSurface from './MorphMapSurface'
+import MobileMapControls from './MobileMapControls'
+import SelectedCountryLabel from './SelectedCountryLabel'
 
 interface WorldMapProps {
   visitedCountries: VisitedCountry[]
-  onCountryAction: (code: string, name: string, status: 'visited' | 'bucketlist') => void
   onCountriesLoaded?: (countries: Country[]) => void
-  onOpenJournal?: (code: string, name: string) => void
+  /** A click on a country opens it (in the sidebar). */
+  onSelectCountry?: (country: Country) => void
+  /** The open country, outlined on the map. */
+  selected?: CountryIdentity | null
+  /** "‹ World view": close the open country (the map also zooms back out). */
+  onWorldView?: () => void
+  /** The countries are still loading. */
+  loading?: boolean
+  /** Centred over the map once it is interactive (the first-run welcome card). */
+  welcome?: ReactNode
+  /** Hide the how-to hint (e.g. while a toast sits in its place). */
+  quiet?: boolean
+  /** Bring this country to the front (e.g. after picking it in search). */
+  focus?: { country: Country; seq: number; pulse?: boolean } | null
+  /** Which marked countries to colour in (both when omitted); the desktop "Show" legend and mobile "Map filters" edit it. */
+  mapFilter?: MapFilter
+  onMapFilterChange?: (filter: MapFilter) => void
 }
 
-export default function WorldMap({ visitedCountries, onCountryAction, onCountriesLoaded, onOpenJournal }: WorldMapProps) {
-  const [geoData, setGeoData] = useState<FeatureCollection | null>(null)
-  const [activePopup, setActivePopup] = useState<{ code: string; name: string; latlng: [number, number] } | null>(null)
-  const geoJsonRef = useRef<LeafletGeoJSON | null>(null)
-  const visitedCountriesRef = useRef<VisitedCountry[]>(visitedCountries)
+/** Desktop gets the globe (or flat, by choice); smaller screens are always flat. */
+const DESKTOP_QUERY = '(min-width: 1024px)'
+const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
+const SURFACE = 'relative w-full h-full select-none'
+const IDENTITY: ViewTransform = { k: 1, x: 0, y: 0 }
+/** Mobile: fit the world to the part of the map between the floating search/chip and the sheet's peek. */
+const MOBILE_INSET: MapInset = { top: 116, right: 0, bottom: SHEET_PEEK + 8, left: 0 }
+/** Mobile: "Fit to my countries" (and the opening fit) never frames less than about a continent. */
+const MOBILE_MIN_FIT_SPAN = 60
+const HINTS: Record<MapView, string> = {
+  globe: 'Drag to spin · Scroll to zoom · Click a country to open it',
+  flat: 'Click a country to open it',
+}
 
-  // Keep ref in sync with prop
-  useEffect(() => {
-    visitedCountriesRef.current = visitedCountries
-  }, [visitedCountries])
+export default function WorldMap(props: WorldMapProps) {
+  const { visitedCountries, onCountriesLoaded, onSelectCountry, selected, onWorldView, mapFilter, onMapFilterChange } = props
+  const { loading, welcome, quiet, focus } = props
+  const filter = mapFilter ?? SHOW_ALL
+  const desktop = useMediaQuery(DESKTOP_QUERY)
+  const reducedMotion = useMediaQuery(REDUCED_QUERY)
+  const { countries, motionCountries, failed } = useWorldCountries(onCountriesLoaded)
+  const [hovered, setHovered] = useState<Pointed | null>(null)
+  const [interacted, setInteracted] = useState(false)
+  const [worldViewSeq, setWorldViewSeq] = useState(0)
+  const [preferred, setPreferred] = useState<MapView>(readMapView)
+  const [morph, setMorph] = useState<{ to: MapView; globe: GlobeView; flat: ViewTransform } | null>(null)
+  const globeView = useRef<GlobeView | null>(null)
+  const flatView = useRef<ViewTransform | null>(null)
+  const savedGlobe = useRef<GlobeView | undefined>(undefined)
+  // Once per session, desktop only, and never with reduced motion.
+  const [intro, setIntro] = useState(() => !introPlayed())
+  const showIntro = intro && desktop && !reducedMotion
+  // Mobile: the label stays in the band between the floating search and the sheet.
+  const label = useSelectedLabel(desktop ? NO_INSET : MOBILE_INSET)
 
-  useEffect(() => {
-    // Load GeoJSON data from a reliable source
-    fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
-      .then(response => response.json())
-      .then(data => {
-        setGeoData(data)
-        
-        // Extract country list for search
-        if (onCountriesLoaded && data.features) {
-          const countries = (data.features as Array<Feature<Geometry, GeoJsonProperties>>)
-            .map(featureIdentity)
-            .filter((c): c is Country => c !== null)
-            .sort((a, b) => a.name.localeCompare(b.name))
-          
-          onCountriesLoaded(countries)
-        }
-      })
-      .catch(error => {
-        console.error('Error loading GeoJSON:', error)
-        // Fallback to alternative source
-        fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json')
-          .then(response => response.json())
-          .then(data => setGeoData(data))
-          .catch(err => console.error('Fallback also failed:', err))
-      })
-  }, [onCountriesLoaded])
+  const statusByKey = useMemo(
+    () => new Map(visitedCountries.map(v => [countryKey(v), v.status] as const)),
+    [visitedCountries]
+  )
+  // What the map fills in: the "Show" filter hides whole statuses.
+  const { visited: showVisited, bucketlist: showBucket } = filter
+  const statusOf = useCallback(
+    (c: IndexedCountry) => shownStatus(statusByKey.get(countryKey(c.identity)), { visited: showVisited, bucketlist: showBucket }),
+    [statusByKey, showVisited, showBucket]
+  )
 
-  const getCountryStyle = (feature?: Feature<Geometry, GeoJsonProperties>): PathOptions => {
-    const identity = featureIdentity(feature)
-    const entry = identity ? findCountry(visitedCountries, identity) : undefined
+  const options: MapViewOptions = {
+    countries,
+    statusOf,
+    hoveredKey: hovered ? countryKey(hovered.country) : null,
+    selectedKey: selected ? countryKey(selected) : null,
+    onHover: (c, x, y) => setHovered(c ? { country: c.identity, x, y } : null),
+    onPick: c => { setHovered(null); setInteracted(true); onSelectCountry?.(c.identity) },
+    onMoveStart: () => setInteracted(true),
+    worldViewSeq,
+    onSelectedAnchor: label.place,
+  }
 
-    return {
-      fillColor: entry?.status === 'visited' ? '#10b981' : entry?.status === 'bucketlist' ? '#f59e0b' : '#e5e7eb',
-      fillOpacity: entry ? 0.7 : 0.5,
-      color: '#fff',
-      weight: 1,
+  const switchView = (to: MapView) => {
+    setHovered(null)
+    // Leaving the globe saves where it was; coming back restores it.
+    if (to === 'flat') savedGlobe.current = globeView.current ?? savedGlobe.current
+    const globe = savedGlobe.current ?? DEFAULT_GLOBE
+    setPreferred(to)
+    writeMapView(to)
+    const shapes = motionCountries ?? countries
+    if (!reducedMotion && shapes) {
+      setMorph({ to, globe, flat: to === 'flat' ? IDENTITY : flatView.current ?? IDENTITY })
     }
   }
 
-  const onEachCountry = (
-    feature: Feature<Geometry, GeoJsonProperties>,
-    layer: unknown
-  ) => {
-    const identity = featureIdentity(feature)
-
-    const leafletLayer = layer as unknown as {
-      bindTooltip: (content: string, options: TooltipOptions) => void
-      setStyle: (style: PathOptions) => void
-      on: (handlers: {
-        mouseover: () => void
-        mouseout: () => void
-        click: (e: { latlng: { lat: number; lng: number } }) => void
-      }) => void
-    }
-    
-    // Bind tooltip that shows automatically on hover
-    leafletLayer.bindTooltip(featureName(feature) ?? 'Unknown', {
-      permanent: false,
-      sticky: true,
-      opacity: 1
-    })
-    
-    leafletLayer.on({
-      mouseover: () => {
-        leafletLayer.setStyle({
-          fillOpacity: 0.9,
-          weight: 2,
-        })
-      },
-      mouseout: () => {
-        const currentEntry = identity
-          ? findCountry(visitedCountriesRef.current, identity)
-          : undefined
-        leafletLayer.setStyle({
-          fillColor: currentEntry?.status === 'visited' ? '#10b981' : currentEntry?.status === 'bucketlist' ? '#f59e0b' : '#e5e7eb',
-          fillOpacity: currentEntry ? 0.7 : 0.5,
-          weight: 1,
-        })
-      },
-      click: (e: { latlng: { lat: number; lng: number } }) => {
-        if (identity) {
-          setActivePopup({ ...identity, latlng: [e.latlng.lat, e.latlng.lng] })
-        }
-      },
-    })
+  const finishIntro = () => {
+    markIntroPlayed()
+    setIntro(false)
+    // A saved Flat preference finishes the intro with the unroll.
+    if (preferred === 'flat') setMorph({ to: 'flat', globe: DEFAULT_GLOBE, flat: IDENTITY })
   }
 
-  // Re-style all layers when visitedCountries changes
-  useEffect(() => {
-    if (geoJsonRef.current) {
-      geoJsonRef.current.eachLayer((layer) => {
-        const leafletLayer = layer as unknown as {
-          feature?: Feature<Geometry, GeoJsonProperties>
-          setStyle: (style: PathOptions) => void
-        }
-
-        if (leafletLayer.feature) {
-          leafletLayer.setStyle(getCountryStyle(leafletLayer.feature))
-        }
-      })
-    }
-  }, [visitedCountries, getCountryStyle])
-
-  if (!geoData) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <p className="text-gray-600">Loading map...</p>
-      </div>
-    )
-  }
+  const view: MapView = desktop ? preferred : 'flat'
+  const canFit = visitedCountries.length > 0
+  const overlays = (
+    <MapOverlays
+      loading={!countries && !motionCountries}
+      failed={failed}
+      hovered={morph ? null : hovered}
+      statusOf={country => statusByKey.get(countryKey(country))}
+    />
+  )
+  const showHint = !interacted && !quiet && !selected && !morph && !welcome && countries !== null
 
   return (
-    <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100 h-full min-h-0 flex flex-col relative">
-        <MapContainer
-          center={[20, 0]}
-          zoom={2}
-          style={{ height: '420px', width: '100%' }}
-          scrollWheelZoom={true}
-          maxBounds={[[-85, -180], [85, 180]]}
-          maxBoundsViscosity={1}
+    <div className="relative h-full overflow-hidden bg-[#EEF2F6]">
+      {showIntro ? (
+        <IntroMapSurface countries={motionCountries ?? countries} statusOf={statusOf} onDone={finishIntro} className={SURFACE} />
+      ) : morph && (motionCountries ?? countries) ? (
+        <MorphMapSurface
+          direction={morph.to === 'flat' ? 'toFlat' : 'toGlobe'}
+          globe={morph.globe}
+          flat={morph.flat}
+          countries={motionCountries ?? countries ?? []}
+          statusOf={statusOf}
+          onDone={() => setMorph(null)}
+          className={SURFACE}
+        />
+      ) : view === 'globe' ? (
+        <GlobeMapSurface
+          options={{ ...options, motionCountries, focus, initialView: savedGlobe.current, viewRef: globeView }}
+          canFit={canFit}
+          className={SURFACE}
         >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            noWrap={true}
+          {overlays}
+        </GlobeMapSurface>
+      ) : (
+        <FlatMapSurface
+          options={{
+            ...options, fitOnOpen: true, viewRef: flatView,
+            // Mobile opens framed on the user's countries, so waits for them to load.
+            ...(desktop ? {} : { inset: MOBILE_INSET, fitReady: !loading, minFitSpan: MOBILE_MIN_FIT_SPAN }),
+          }}
+          canFit={canFit}
+          className={SURFACE}
+          controls={desktop ? undefined : fit => <MobileMapControls onFit={fit} filter={filter} onFilterChange={onMapFilterChange} />}
+        >
+          {overlays}
+        </FlatMapSurface>
+      )}
+      {selected && !showIntro && !morph && <SelectedCountryLabel name={selected.name} labelRef={label.ref} />}
+      {!showIntro && (
+        <>
+          <MapChrome
+            desktop={desktop}
+            view={morph ? morph.to : preferred}
+            morphing={morph !== null}
+            onViewChange={switchView}
+            progress={atlasProgress(visitedCountries)}
+            loading={loading}
+            selected={Boolean(selected)}
+            onWorldView={() => { setWorldViewSeq(s => s + 1); onWorldView?.() }}
+            filter={filter}
+            onFilterChange={f => onMapFilterChange?.(f)}
+            showLegend={Boolean(onMapFilterChange) && canFit}
+            hint={showHint ? HINTS[view] : null}
           />
-          <GeoJSON
-            ref={geoJsonRef}
-            data={geoData}
-            style={getCountryStyle}
-            onEachFeature={onEachCountry}
-          />
-          {activePopup && (() => {
-            const entry = findCountry(visitedCountries, activePopup)
-            return (
-              <Popup
-                position={activePopup.latlng}
-                eventHandlers={{ remove: () => setActivePopup(null) }}
-              >
-                <div className="text-sm min-w-[160px]">
-                  <p className="font-semibold text-gray-800 mb-2">{activePopup.name}</p>
-                  <div className="flex gap-2 mb-2">
-                    <button
-                      onClick={() => { onCountryAction(activePopup.code, activePopup.name, 'visited'); setActivePopup(null) }}
-                      className={`flex-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
-                        entry?.status === 'visited'
-                          ? 'bg-emerald-500 text-white border-emerald-500'
-                          : 'border-emerald-500 text-emerald-600 hover:bg-emerald-50'
-                      }`}
-                    >Visited</button>
-                    <button
-                      onClick={() => { onCountryAction(activePopup.code, activePopup.name, 'bucketlist'); setActivePopup(null) }}
-                      className={`flex-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${
-                        entry?.status === 'bucketlist'
-                          ? 'bg-amber-500 text-white border-amber-500'
-                          : 'border-amber-500 text-amber-600 hover:bg-amber-50'
-                      }`}
-                    >Bucket List</button>
-                  </div>
-                  {entry && onOpenJournal && (
-                    <button
-                      onClick={() => { onOpenJournal(activePopup.code, activePopup.name); setActivePopup(null) }}
-                      className="w-full px-2 py-1 rounded text-xs font-medium border border-blue-400 text-blue-600 hover:bg-blue-50 transition-colors"
-                    >
-                      Edit Journal
-                    </button>
-                  )}
-                </div>
-              </Popup>
-            )
-          })()}
-        </MapContainer>
-        <div className="absolute bottom-4 left-4 z-[1000] bg-white rounded-lg shadow-md border border-gray-200 px-3 py-2 text-xs space-y-1">
-          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" /> Visited</div>
-          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-amber-500 inline-block" /> Bucket List</div>
-          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-gray-300 inline-block" /> Not visited</div>
-        </div>
+          {welcome}
+        </>
+      )}
     </div>
   )
 }

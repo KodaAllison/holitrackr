@@ -73,3 +73,9 @@ describe('display', () => {
     expect(monthName(8)).toBe('August')
   })
 })
+
+describe('fromStoredVisitDate with a Date', () => {
+  it('reads a pg local-midnight Date without rolling back a month', () => {
+    expect(fromStoredVisitDate(new Date(2024, 4, 1))).toBe('2024-05')
+  })
+})

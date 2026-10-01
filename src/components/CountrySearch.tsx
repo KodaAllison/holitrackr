@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Country, VisitedCountry } from '../types'
 import { statusOf } from '../lib/visitedCountries'
 
@@ -6,103 +6,112 @@ interface CountrySearchProps {
   countries: Country[]
   visitedCountries: VisitedCountry[]
   onCountrySelect: (country: Country, status: 'visited' | 'bucketlist') => void
+  /** Over the mobile map: white, shadowed, no "/" hint. Default: the app-bar field. */
+  floating?: boolean
+  /** Inside the first-run welcome card: 48px, blue ring, "Where have you been?", no "/" hint. */
+  welcome?: boolean
+  /** While the countries load the app-bar field hides its "/" hint. */
+  loading?: boolean
 }
 
-export default function CountrySearch({
-  countries,
-  visitedCountries,
-  onCountrySelect
-}: CountrySearchProps) {
+const MAX_RESULTS = 10
+
+function isTyping(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+}
+
+/** Search a country, then mark it Visited or Bucket list from the results. */
+export default function CountrySearch({ countries, visitedCountries, onCountrySelect, floating, welcome, loading }: CountrySearchProps) {
   const [searchTerm, setSearchTerm] = useState('')
-  const [filteredCountries, setFilteredCountries] = useState<Country[]>([])
-  const [showDropdown, setShowDropdown] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const query = searchTerm.trim().toLowerCase()
+  const results = query ? countries.filter(c => c.name.toLowerCase().includes(query)).slice(0, MAX_RESULTS) : []
+  const inBar = !floating && !welcome
 
+  // "/" focuses the app-bar search from anywhere, as the hint in the field says.
   useEffect(() => {
-    if (searchTerm.trim() === '') {
-      setFilteredCountries([])
-      setShowDropdown(false)
-      return
+    if (!inBar) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return
+      e.preventDefault()
+      inputRef.current?.focus()
     }
-
-    const filtered = countries
-      .filter(country =>
-        country.name.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-      .slice(0, 10) // Limit to 10 results
-
-    setFilteredCountries(filtered)
-    setShowDropdown(filtered.length > 0)
-  }, [searchTerm, countries])
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [inBar])
 
   const handleSelect = (country: Country, status: 'visited' | 'bucketlist') => {
     onCountrySelect(country, status)
     setSearchTerm('')
-    setShowDropdown(false)
   }
 
   return (
-    <div className="relative w-full max-w-md">
-      <div className="relative">
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search for a country..."
-          className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-        <svg
-          className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-          />
+    <div className={`relative w-full ${inBar ? 'max-w-[460px]' : ''}`}>
+      <label className="relative block">
+        <span className="sr-only">Search countries</span>
+        <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6675" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-4-4" />
         </svg>
-      </div>
+        <input
+          ref={inputRef}
+          type="search"
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') { setSearchTerm(''); e.currentTarget.blur() } }}
+          placeholder={welcome ? 'Where have you been?' : floating ? 'Search a country…' : 'Search a country to mark it…'}
+          className={`w-full pl-11 text-[#1E293B] placeholder:text-[#5B6675] focus:outline-none ${
+            welcome
+              ? 'h-12 pr-3.5 rounded-xl border-2 border-[#2563EB] bg-white text-base shadow-[0_0_0_4px_#DBEAFE]'
+              : floating
+                ? 'focus:ring-2 focus:ring-[#2563EB] h-[46px] pr-3.5 rounded-[14px] bg-white text-base shadow-[0_2px_8px_rgba(15,23,42,0.16)]'
+                : 'focus:ring-2 focus:ring-[#2563EB] peer h-11 pr-14 rounded-xl border border-[#D7DEE5] bg-[#F7F9FB] text-[15px] focus:bg-white focus:border-transparent'
+          }`}
+        />
+        {inBar && !loading && (
+          <kbd aria-hidden="true" className="absolute right-3 top-1/2 -translate-y-1/2 px-[7px] py-0.5 rounded-md border border-[#D7DEE5] bg-white text-xs font-sans text-[#5B6675] peer-focus:hidden">
+            /
+          </kbd>
+        )}
+      </label>
 
-      {showDropdown && (
-        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-          {filteredCountries.map((country) => {
+      {results.length > 0 && (
+        <ul className="absolute z-40 w-full mt-1.5 py-1 bg-white border border-[#D7DEE5] rounded-xl shadow-[0_12px_40px_rgba(15,23,42,0.2)] max-h-72 overflow-y-auto">
+          {results.map(country => {
             const activeStatus = statusOf(visitedCountries, country)
             return (
-              <div
-                key={country.code}
-                className="w-full px-4 py-2 hover:bg-gray-100 flex items-center justify-between gap-2 transition-colors"
-              >
-                <span className="font-medium">{country.name}</span>
-                <div className="flex items-center gap-1 shrink-0">
+              <li key={country.code + country.name} className="px-4 h-12 hover:bg-[#F7F9FB] flex items-center justify-between gap-2">
+                <span className="font-medium text-[#1E293B] truncate">{country.name}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
+                    aria-pressed={activeStatus === 'visited'}
                     onClick={() => handleSelect(country, 'visited')}
-                    className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                    className={`h-8 px-2.5 text-xs font-semibold rounded-full border transition-colors ${
                       activeStatus === 'visited'
-                        ? 'bg-emerald-500 text-white'
-                        : 'border border-emerald-500 text-emerald-600 hover:bg-emerald-50'
+                        ? 'bg-[#0B7A53] border-[#0B7A53] text-white'
+                        : 'border-[#0B7A53] text-[#0B7A53] hover:bg-[#0B7A53]/10'
                     }`}
                   >
                     Visited
                   </button>
                   <button
                     type="button"
+                    aria-pressed={activeStatus === 'bucketlist'}
                     onClick={() => handleSelect(country, 'bucketlist')}
-                    className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                    className={`h-8 px-2.5 text-xs font-semibold rounded-full border transition-colors ${
                       activeStatus === 'bucketlist'
-                        ? 'bg-amber-500 text-white'
-                        : 'border border-amber-500 text-amber-600 hover:bg-amber-50'
+                        ? 'bg-[#F2B24E] border-[#9A5B00] text-[#5A3500]'
+                        : 'border-[#D9A650] text-[#8A5A0B] hover:bg-[#F2B24E]/15'
                     }`}
                   >
-                    Bucket List
+                    Bucket list
                   </button>
                 </div>
-              </div>
+              </li>
             )
           })}
-        </div>
+        </ul>
       )}
     </div>
   )
