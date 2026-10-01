@@ -6,14 +6,19 @@ The main application is private and requires Google sign-in. A separate read-onl
 
 ## Features
 
-- Interactive Leaflet world map with visited, bucket-list, and unselected states
-- Country search as an alternative to selecting countries on the map
+- Interactive canvas world map (d3-geo): a spinnable globe on desktop with a Globe / Flat toggle that unrolls between the two, and a flat map on mobile
+- Startup globe intro (once per session) and an "atlas plate" sign-in screen
+- Visited, bucket-list, and unselected states, with Show filters to hide either fill
+- Country search (press `/` to focus) as an alternative to selecting countries on the map
+- Sidebar country list sortable by continent, date, or name, with keyboard navigation; a draggable bottom sheet on mobile
 - Google authentication through Better Auth
 - Per-user PostgreSQL persistence
 - Visited and bucket-list totals, world-explored percentage, and remaining-country count
 - Countries grouped by status and continent
-- Travel journal fields for notes, visit month, rating, and tags
-- Timeline view grouped by visit year
+- Travel journal fields for place, notes, visit month, rating, and tags, saved automatically
+- Multiple visits per country, each with its own month, place, rating, notes, and tags
+- Milestone moments (10, 25, 50, 100 countries, or a first country on a new continent)
+- Scrubbable timeline: map that fills in as you play, great-circle legs between trips, a draggable ruler, and a journey feed (oldest first) with planned and undated sections
 - One-time migration of older per-user browser data into the database
 - Privacy-limited public stats endpoint for portfolio integrations
 - Responsive React and Tailwind interface
@@ -25,13 +30,14 @@ There is currently no guest mode. A visitor must sign in before using the main t
 | Area | Technology |
 |---|---|
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
-| Map | Leaflet, React-Leaflet, OpenStreetMap tiles, GeoJSON country boundaries |
+| Map | d3-geo canvas renderer (globe and flat), d3-zoom, bundled TopoJSON country boundaries |
 | Local backend | Express 5 running through `tsx` |
 | Production backend | Vercel Functions under `api/` |
 | Authentication | Better Auth with Google OAuth |
 | Database | PostgreSQL locally or a hosted provider such as Neon |
 | Production database driver | `@neondatabase/serverless` |
 | Tests | Vitest |
+| Fonts | Instrument Serif and JetBrains Mono (`@fontsource`) on the sign-in screen only |
 | Code quality | TypeScript strict mode and ESLint |
 
 ## How the application is structured
@@ -104,7 +110,7 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173).
 
-On startup, the Express server runs the Better Auth migrations and ensures the `visited_countries` table and its current columns exist in the configured database.
+On startup, the Express server runs the Better Auth migrations and ensures the `visited_countries` and `country_visits` tables and their current columns exist in the configured database.
 
 ## Available commands
 
@@ -112,7 +118,7 @@ On startup, the Express server runs the Better Auth migrations and ensures the `
 |---|---|
 | `npm run dev` | Start Express and the Vite development client together |
 | `npm run dev:client` | Start only Vite; API and authentication routes will not be available locally |
-| `npm run db:migrate` | Apply Better Auth and `visited_countries` migrations to `DATABASE_URL` |
+| `npm run db:migrate` | Apply Better Auth and application migrations to `DATABASE_URL` |
 | `npm test` | Run the Vitest suite once |
 | `npm run test:watch` | Run Vitest in watch mode |
 | `npm run lint` | Run ESLint |
@@ -122,13 +128,16 @@ On startup, the Express server runs the Better Auth migrations and ensures the `
 ## Using HoliTrackr
 
 1. Sign in with Google.
-2. Select a country on the map or use country search.
-3. Mark it as **Visited** or **Bucket List**.
-4. Open **Edit Journal** to add notes, a visit month, a rating, and tags.
-5. Switch to **Timeline** to view visited countries grouped by year.
-6. Use the country list to edit, remove, or reset records.
+2. Click a country on the map (drag to spin the globe) or use country search. The country opens in the sidebar.
+3. Mark it as **Visited** or **Bucket list**. An Undo toast appears.
+4. In the sidebar, fill in the journal (place, notes, month, rating, tags). Changes autosave. For bucket-list countries the month means "Hoping to go".
+5. Use **Add another visit** to record repeat trips to the same country.
+6. Switch to **Timeline** (top bar, or the Timeline button on mobile) and press Play to replay your travels, or drag the playhead along the ruler.
+7. Use the country list to sort, edit, remove, or reset records.
 
-Map changes are applied optimistically in the browser. If a database request fails, the app refetches the server state.
+Use the Globe / Flat toggle (desktop) to change map style; the choice is remembered. Below the `lg` breakpoint the map is always flat, with a floating search, map controls, and a draggable bottom sheet.
+
+Map changes are applied optimistically in the browser. If a database request fails, an error toast offers Retry and the app refetches the server state.
 
 ## API overview
 
@@ -142,7 +151,7 @@ Map changes are applied optimistically in the browser. If a database request fai
 |---|---|---|
 | `GET` | `/api/countries` | Return the signed-in user's countries and journal data |
 | `POST` | `/api/countries` | Add a country or update its visited/bucket-list status |
-| `PATCH` | `/api/countries` | Update journal fields |
+| `PATCH` | `/api/countries` | Update journal fields (including `place`) |
 | `DELETE` | `/api/countries` | Remove one country |
 | `DELETE` | `/api/countries?reset=true` | Remove all countries for the signed-in user |
 
@@ -164,11 +173,20 @@ Example PATCH body:
   "code": "ESP",
   "name": "Spain",
   "notes": "Great food and architecture",
+  "place": "Barcelona & Seville",
   "visitedAt": "2026-09",
   "rating": 5,
   "tags": ["Food", "Culture", "City"]
 }
 ```
+
+Extra visits (`/api/countries/visits`, handled by `api/countries/visits.ts` in production) let a country carry more than one trip. Each has `visitedAt` (`YYYY-MM`), `place`, `rating`, `notes`, and `tags`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/countries/visits` | Add an extra visit to a country |
+| `PATCH` | `/api/countries/visits` | Update an extra visit |
+| `DELETE` | `/api/countries/visits` | Remove an extra visit |
 
 Country identity uses both code and name because the source GeoJSON can reuse placeholder codes such as `-99`.
 
@@ -268,7 +286,7 @@ The complete public contract and normalization decisions are recorded in [PUBLIC
 
 ## Database model
 
-The application stores one row per user and country identity in `visited_countries`.
+The application stores one row per user and country identity in `visited_countries`. That row holds the country's first visit and journal.
 
 | Column | Purpose |
 |---|---|
@@ -277,13 +295,26 @@ The application stores one row per user and country identity in `visited_countri
 | `country_code` | GeoJSON/ISO-like country code |
 | `country_name` | Country name used with the code as identity |
 | `status` | `visited` or `bucketlist` |
+| `place` | Optional free-text place, up to 120 characters (e.g. "Kyoto & Osaka") |
 | `notes` | Optional journal note |
-| `visit_date` | Optional month stored as the first day of that month |
-| `rating` | Optional 1–5 rating |
+| `visit_date` | Optional month stored as the first day of that month ("Hoping to go" for bucket-list rows) |
+| `rating` | Optional 1–5 rating (CHECK constraint) |
 | `tags` | Journal tags serialized as JSON text |
 | `created_at` | Row creation timestamp |
 
-The uniqueness constraint is `(user_id, country_code, country_name)`. Multiple visits to the same country are not currently represented as separate rows.
+The uniqueness constraint is `(user_id, country_code, country_name)`.
+
+Extra visits live in `country_visits`, which references `"user"(id)` with `ON DELETE CASCADE`:
+
+| Column | Purpose |
+|---|---|
+| `id` | Serial primary key |
+| `user_id`, `country_code`, `country_name` | Same identity as `visited_countries` (indexed) |
+| `visit_date` | Required month stored as the first day of that month |
+| `place`, `rating`, `notes`, `tags` | As on `visited_countries` |
+| `created_at` | Row creation timestamp |
+
+Removing a country or resetting the atlas deletes its `country_visits` rows in the same statement.
 
 ## Project structure
 
@@ -291,18 +322,23 @@ The uniqueness constraint is `(user_id, country_code, country_name)`. Multiple v
 api/
   auth/[...all].ts       Better Auth Vercel function
   countries.ts           Private countries Vercel function
+  countries/visits.ts    Extra-visits Vercel function
   public/stats.ts        Public stats Vercel function
 src/
-  components/            React UI components
-  lib/                   Auth, continent, metadata, and country helpers
+  components/            React UI: app bar, sidebar, map chrome, timeline, sign-in
+  data/                  Compact world TopoJSON (motion and detail levels)
+  lib/                   Auth, continent, metadata, timeline, and country helpers
+  lib/mapEngine/         d3-geo canvas engine: hit-testing, clustering, renderer,
+                         flat and globe hooks, morph, intro and sign-in drawing
   server/                Shared server-side behavior and payload parsing
   types/                 Shared TypeScript contracts
+scripts/                 migrate.ts and build-world-atlas.mjs (rebuilds src/data)
 server.ts                Local Express server and database migrations
 vercel.json              Production build and rewrite configuration
 PUBLIC_STATS_PLAN.md     Final public-stats contract
 ```
 
-The map loads country boundaries from a public GeoJSON source and map tiles from OpenStreetMap, so the map requires internet access even when the application server is local.
+Country boundaries come from compact TopoJSON files bundled in `src/data/` (about 32 KB and 110 KB gzipped), so the map needs no external tiles or boundary downloads. Regenerate them from the pinned source with `node scripts/build-world-atlas.mjs`; the script and tests fail if any country name or ISO alpha-3 identity changes, so saved rows keep matching.
 
 ## Testing and quality checks
 
@@ -359,11 +395,11 @@ Confirm that the selected user id is correct and that the user has rows whose st
 
 ### The map does not load
 
-Confirm that the browser can reach the external GeoJSON source and OpenStreetMap tile servers.
+The map data is bundled with the app, so check the browser console and network tab for a failed request for the hashed `world-*.topo.json` asset. If the atlas fails to load, the app shows "Couldn't load your atlas." with a Retry button.
 
 ## Roadmap
 
-Potential features and current status are tracked in [FEATURES.md](./FEATURES.md). Opt-in public profiles are intentionally deferred; the current endpoint exposes only one deployment-configured owner.
+Potential features and current status are tracked in [FEATURES.md](./FEATURES.md), including the Atlas v2 redesign specs. Redesign work lands on the `atlas-v2` trunk (see `CLAUDE.md`). Opt-in public profiles are intentionally deferred; the current endpoint exposes only one deployment-configured owner.
 
 ## License
 
