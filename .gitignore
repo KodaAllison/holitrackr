@@ -47,3 +47,6 @@ lerna-debug.log*
 
 # OS
 Thumbs.db
+
+# koder skill credentials must never be committed
+.claude/skills/koder-ticket/.koder.env
