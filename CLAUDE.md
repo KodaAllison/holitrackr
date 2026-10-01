@@ -118,6 +118,27 @@ statement. Shared query/handler logic is in `src/server/countryVisits.ts`.
 - `fix/<short-name>` — bug fix branches
 - Squash-merge PRs to keep main history clean
 - PR description should reference the feature from `FEATURES.md` and include a brief test plan
+- **PR titles must be conventional commits** (checked by `.github/workflows/pr-title.yml`), because the squashed title is what release-please reads. See Releases below.
+
+## Releases & Versioning
+
+HoliTrackr follows [semver](https://semver.org/), starting at 1.0.0 (Atlas v2). Releases are cut by [release-please](https://github.com/googleapis/release-please):
+
+1. Every PR into `main` is squash-merged with a conventional title. The type decides the bump:
+   - `fix: …` → patch (1.0.0 → 1.0.1)
+   - `feat: …` → minor (1.0.0 → 1.1.0)
+   - `feat!: …` or a `BREAKING CHANGE:` footer → major (1.0.0 → 2.0.0)
+   - `perf:` appears in the changelog; `docs:`, `refactor:`, `test:`, `ci:`, `chore:` are hidden and don't trigger a release on their own
+   - Optional scope for the area: `feat(map): …`, `fix(timeline): …`
+2. On each push to `main`, `.github/workflows/release-please.yml` updates an open release PR (`chore(main): release X.Y.Z`) with the version bump and the `CHANGELOG.md` entry.
+3. Merging the release PR tags `vX.Y.Z` and publishes a GitHub Release.
+
+What counts as breaking: anything that breaks an existing user's saved data, or changes the shape of `GET /api/public/stats` (the portfolio site consumes it, see `PUBLIC_STATS_PLAN.md`).
+
+Rules:
+- Never hand-edit `CHANGELOG.md`, `.release-please-manifest.json` or the `version` in `package.json`; release-please owns them.
+- For trunk work, PRs into the trunk still use conventional titles, but only the trunk → `main` PR title reaches the changelog, so write that one as the release headline (e.g. `feat: Atlas v2 redesign`).
+- Release PRs are opened with `GITHUB_TOKEN`, so CI doesn't run on them. They only touch the version and changelog.
 
 ### Atlas v2 trunk
 
