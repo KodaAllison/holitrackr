@@ -13,8 +13,10 @@ import ErrorToast from './components/ErrorToast'
 import ToastStack from './components/ToastStack'
 import MobileBackButton from './components/MobileBackButton'
 import { detectMilestone, markMilestoneSeen, milestoneMessage, seenMilestones, type Milestone } from './lib/milestones'
-import { journalValuesOf, type JournalValues } from './lib/journal'
-import { isPendingVisit, toVisit, visitValuesOf, withVisitAdded, withVisitRemoved, withVisitReplaced } from './lib/countryVisits'
+import { journalValuesOf } from './lib/journal'
+import { isPendingVisit, visitValuesOf } from './lib/countryVisits'
+import { useVisitActions } from './lib/useVisitActions'
+import AtlasLoadError from './components/AtlasLoadError'
 import TripTimeline from './components/TripTimeline'
 import MapWelcomeCard from './components/MapWelcomeCard'
 import { markedMessage, SHOW_ALL } from './lib/mapFilter'
@@ -105,6 +107,9 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   const [welcomeDismissed, setWelcomeDismissed] = useState(false)
   // Whose countries have finished loading; until it is this user's, the list is loading.
   const [loadedFor, setLoadedFor] = useState<string | null>(null)
+  // Whose load failed (shown as an error over the map, never as an empty atlas); bump loadAttempt to retry.
+  const [loadFailedFor, setLoadFailedFor] = useState<string | null>(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [mapFocus, setMapFocus] = useState<{ country: Country; seq: number; pulse?: boolean } | null>(null)
   const [milestone, setMilestone] = useState<Milestone | null>(null)
   const dismissMilestone = useCallback(() => setMilestone(null), [])
@@ -119,6 +124,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   const selectedCountry = selected ? findCountry(visitedCountries, selected) ?? null : null
   const pickedCountry = selected && !selectedCountry ? selected : null
   const loadingCountries = Boolean(session?.user?.id) && loadedFor !== session?.user?.id
+  const loadFailed = Boolean(session?.user?.id) && loadFailedFor === session?.user?.id
 
   const dismissUndo = useCallback(() => setRemoved(null), [])
   const dismissMarked = useCallback(() => setMarked(null), [])
@@ -159,42 +165,15 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     }
   }
 
-  // Extra visits (FEATURES.md #8). A new visit shows at once under a
-  // placeholder id (negative, see isPendingVisit) until the server returns it.
-  const nextPendingVisitId = useRef(-1)
-  const addVisit = async (country: VisitedCountry, values: JournalValues): Promise<void> => {
-    const pendingId = nextPendingVisitId.current--
-    setVisitedCountries(prev => withVisitAdded(prev, country, toVisit(pendingId, values)))
-    try {
-      const stored = await countriesClient.addVisit(country, values)
-      setVisitedCountries(prev => withVisitReplaced(prev, pendingId, stored))
-    } catch (err) {
-      console.warn('Failed to add visit:', err)
-      await refreshCountries()
-    }
-  }
-
-  const updateVisit = async (id: number, values: JournalValues): Promise<void> => {
-    if (isPendingVisit(id)) return // not stored yet; the list disables editing it
-    setVisitedCountries(prev => withVisitReplaced(prev, id, toVisit(id, values)))
-    try {
-      await countriesClient.updateVisit(id, values)
-    } catch (err) {
-      console.warn('Failed to update visit:', err)
-      await refreshCountries()
-    }
-  }
-
-  const removeVisit = async (id: number): Promise<void> => {
-    if (isPendingVisit(id)) return // still saving; the list hides Remove until it is stored
-    setVisitedCountries(prev => withVisitRemoved(prev, id))
-    try {
-      await countriesClient.removeVisit(id)
-    } catch (err) {
-      console.warn('Failed to remove visit:', err)
-      await refreshCountries()
-    }
-  }
+  // Extra visits (FEATURES.md #8): failures show in the ErrorToast; a removal has Undo.
+  const visitActions = useVisitActions({
+    client: countriesClient,
+    visitedCountries,
+    setVisitedCountries,
+    refresh: refreshCountries,
+    reportError: setSaveError,
+  })
+  const { removedVisit, dismissRemovedVisit } = visitActions
 
   // From the timeline ("Add a date"): back to the map with the country open.
   const openInMap = (country: VisitedCountry) => {
@@ -211,9 +190,11 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
         try {
           fromDb = await countriesClient.list()
         } catch (err) {
+          // Not the local copy: an empty or stale fallback would look like lost data.
           console.warn('Failed to load countries:', err)
           if (!cancelled) {
-            setVisitedCountries(loadVisitedCountries(session.user.id))
+            setVisitedCountries([])
+            setLoadFailedFor(session.user.id)
           }
           return
         }
@@ -255,7 +236,13 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
         cancelled = true
       }
     }
-  }, [countriesClient, session?.user?.id])
+  }, [countriesClient, session?.user?.id, loadAttempt])
+
+  const retryLoad = () => {
+    setLoadFailedFor(null)
+    setLoadedFor(null)
+    setLoadAttempt(n => n + 1)
+  }
 
   /** Returns true when the change reached a milestone (which also focuses the map). */
   const toggleCountry = (country: VisitedCountry | Country, explicitStatus?: 'visited' | 'bucketlist'): boolean => {
@@ -272,6 +259,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     }
     if (planned.type === 'upsert') {
       setRemoved(null)
+      dismissRemovedVisit()
       setMarked({ country: { code: country.code, name: country.name }, previous: statusOf(visitedCountries, country), status: planned.status })
     }
     setVisitedCountries(prev => {
@@ -324,6 +312,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
 
   const removeCountry = (country: VisitedCountry) => {
     setMarked(null)
+    dismissRemovedVisit() // its visits go with it
     setRemoved(country)
     if (selected && sameCountry(selected, country)) setSelected(null)
     setVisitedCountries(prev => prev.filter(v => !sameCountry(v, country)))
@@ -363,8 +352,17 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   }
 
   const resetVisitedCountries = async () => {
+    // Nothing from before the reset may be undone into the empty atlas.
+    setRemoved(null)
+    setMarked(null)
+    dismissRemovedVisit()
+    setMilestone(null)
+    setSaveError(null)
+    setSelected(null)
     setVisitedCountries([])
     try {
+      // A mark or removal still in flight would otherwise land after the reset.
+      await Promise.allSettled([pendingMark.current, pendingRemoval.current, visitActions.settled()])
       await countriesClient.reset()
     } catch (err) {
       console.warn('Failed to reset visited countries:', err)
@@ -411,7 +409,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
   // Mobile map view has no bar: search and account float over the map instead.
   const showBar = desktop || activeView === 'timeline'
   // First run (desktop): the welcome card over the map until something is marked or it is dismissed.
-  const showWelcome = desktop && !loadingCountries && !welcomeDismissed && visitedCountries.length === 0 && !selected
+  const showWelcome = desktop && !loadingCountries && !loadFailed && !welcomeDismissed && visitedCountries.length === 0 && !selected
 
   // Signed in: app bar, then the map with the country panel, or the timeline.
   return (
@@ -427,6 +425,13 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
         )}
         {removed && (
           <Toast message={`Removed ${removed.name}`} action={{ label: 'Undo', onClick: () => { void undoRemove() } }} onDismiss={dismissUndo} />
+        )}
+        {removedVisit && (
+          <Toast
+            message={`Removed a visit to ${removedVisit.country.name}`}
+            action={{ label: 'Undo', onClick: () => { void visitActions.undoRemoveVisit() } }}
+            onDismiss={dismissRemovedVisit}
+          />
         )}
         {saveError && <ErrorToast message={saveError.message} onRetry={saveError.retry} onDismiss={dismissSaveError} />}
         {milestone && <Toast message={milestoneMessage(milestone)} tone="celebrate" onDismiss={dismissMilestone} />}
@@ -451,12 +456,13 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
               selected={selected}
               onWorldView={() => setSelected(null)}
               loading={loadingCountries}
-              quiet={Boolean(removed || marked || milestone)}
+              quiet={Boolean(removed || removedVisit || marked || milestone)}
               welcome={showWelcome && <MapWelcomeCard search={search(false, true)} onDismiss={() => setWelcomeDismissed(true)} />}
               focus={mapFocus}
               mapFilter={mapFilter}
               onMapFilterChange={setMapFilter}
             />
+            {loadFailed && <AtlasLoadError onRetry={retryLoad} />}
             {!desktop && (
               // A selected country swaps the avatar for a back button before the search.
               <div className="absolute top-4 inset-x-4 z-20 flex gap-2">
@@ -474,14 +480,15 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
               picked={pickedCountry}
               onMark={(country, status) => toggleCountry(country, status)}
               loading={loadingCountries}
+              loadFailed={loadFailed}
               onSelect={selectCountry}
               onBack={() => setSelected(null)}
               onSetStatus={(country, status) => toggleCountry(country, status)}
               onSaveJournal={updateCountryJournal}
               onRemove={removeCountry}
-              onAddVisit={(country, values) => { void addVisit(country, values) }}
-              onUpdateVisit={(id, values) => { void updateVisit(id, values) }}
-              onRemoveVisit={id => { void removeVisit(id) }}
+              onAddVisit={(country, values) => { void visitActions.addVisit(country, values) }}
+              onUpdateVisit={(id, values) => { void visitActions.updateVisit(id, values) }}
+              onRemoveVisit={visitActions.removeVisit}
               onReset={resetVisitedCountries}
               listAction={!desktop && <TimelineButton onClick={() => { setActiveView('timeline'); window.scrollTo(0, 0) }} />}
             />

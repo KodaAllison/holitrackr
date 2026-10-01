@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Country, VisitedCountry } from '../types'
 import { getContinent } from '../lib/continents'
+import { useFocusOnMount } from '../lib/useFocusOnMount'
 
 type Status = VisitedCountry['status']
 
@@ -18,6 +19,7 @@ const BUTTON = 'flex h-11 items-center justify-center whitespace-nowrap rounded-
  */
 export default function CountryMarkPanel({ country, onBack, onMark }: CountryMarkPanelProps) {
   const back = useRef(onBack)
+  const heading = useFocusOnMount<HTMLHeadingElement>()
   useEffect(() => { back.current = onBack })
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) back.current() }
@@ -50,7 +52,7 @@ export default function CountryMarkPanel({ country, onBack, onMark }: CountryMar
       <div className="flex flex-col gap-[18px] px-5 pb-4 pt-1">
         <div className="flex flex-col gap-0.5">
           <span className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5B6675]">{getContinent(country.code, country.name)}</span>
-          <h2 className="text-[28px] font-bold leading-tight tracking-[-0.01em] text-[#1E293B]">{country.name}</h2>
+          <h2 ref={heading} tabIndex={-1} className="text-[28px] focus:outline-none font-bold leading-tight tracking-[-0.01em] text-[#1E293B]">{country.name}</h2>
           <p className="text-sm text-[#5B6675]">Not marked yet</p>
         </div>
         <div role="group" aria-label="Mark as" className="grid grid-cols-2 gap-1.5">

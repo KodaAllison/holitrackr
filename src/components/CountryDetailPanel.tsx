@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { VisitedCountry } from '../types'
 import { getContinent } from '../lib/continents'
 import { journalValuesOf, type JournalValues } from '../lib/journal'
+import { createSaveQueue } from '../lib/saveQueue'
+import { useFocusOnMount } from '../lib/useFocusOnMount'
 import AutosaveStatus, { type SaveState } from './AutosaveStatus'
 import JournalFields from './JournalFields'
 import StatusControl from './StatusControl'
@@ -35,6 +37,9 @@ export default function CountryDetailPanel(props: CountryDetailPanelProps) {
   const save = useRef(onSave)
   const back = useRef(onBack)
   useEffect(() => { save.current = onSave; back.current = onBack })
+  // One save at a time, latest values only: see createSaveQueue.
+  const [queue] = useState(() => createSaveQueue<JournalValues>(v => save.current(v)))
+  const heading = useFocusOnMount<HTMLHeadingElement>()
 
   // Esc closes the panel (menus and editors that handle Esc first prevent this).
   useEffect(() => {
@@ -50,20 +55,20 @@ export default function CountryDetailPanel(props: CountryDetailPanelProps) {
     const timer = window.setTimeout(() => {
       setSaved('saving')
       // "Saved" only once the server confirms; on failure keep the edit and say so.
-      save.current(values).then(
+      queue.push(values).then(
         () => setSaved(s => (s === 'saving' ? 'saved' : s)),
         () => setSaved(s => (s === 'saving' ? 'failed' : s)),
       )
     }, AUTOSAVE_MS)
     return () => window.clearTimeout(timer)
-  }, [values, dirty])
+  }, [values, dirty, queue])
 
   // Flush an unsaved edit if the panel closes before the timer fires.
   const latest = useRef({ values, dirty })
   useEffect(() => { latest.current = { values, dirty } })
   useEffect(() => () => {
-    if (latest.current.dirty) save.current(latest.current.values).catch(() => undefined)
-  }, [])
+    if (latest.current.dirty) queue.push(latest.current.values).catch(() => undefined)
+  }, [queue])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -90,7 +95,7 @@ export default function CountryDetailPanel(props: CountryDetailPanelProps) {
       <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-5 pb-4 pt-1">
         <div className="flex flex-col gap-0.5">
           <span className="text-xs font-semibold uppercase tracking-[0.06em] text-[#5B6675]">{getContinent(country.code, country.name)}</span>
-          <h2 className="text-[28px] font-bold leading-tight tracking-[-0.01em] text-[#1E293B]">{country.name}</h2>
+          <h2 ref={heading} tabIndex={-1} className="text-[28px] focus:outline-none font-bold leading-tight tracking-[-0.01em] text-[#1E293B]">{country.name}</h2>
         </div>
 
         <StatusControl status={country.status} onSetStatus={onSetStatus} onRemove={onRemove} />

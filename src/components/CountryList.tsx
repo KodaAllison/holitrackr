@@ -21,6 +21,8 @@ interface CountryListProps {
   onReset?: () => void
   /** Row to focus on mount, e.g. the country whose detail just closed. */
   focusKey?: string
+  /** The countries could not be loaded: a neutral note, never the first-run empty state. */
+  loadFailed?: boolean
   loading?: boolean
   /** Beside the heading, e.g. the mobile Timeline button. */
   action?: ReactNode
@@ -46,7 +48,7 @@ const HEADING = 'flex justify-between px-2 pb-1 text-xs font-semibold uppercase 
  * tabs with counts, and rows grouped by continent (or flat by date / name).
  */
 export default function CountryList(props: CountryListProps) {
-  const { visitedCountries, tab, onTabChange, sort, onSortChange, onSelect, onSetStatus, onReset, focusKey, loading, action } = props
+  const { visitedCountries, tab, onTabChange, sort, onSortChange, onSelect, onSetStatus, onReset, focusKey, loading, loadFailed, action } = props
   const panel = useRef<HTMLDivElement>(null)
   const visited = withStatus(visitedCountries, 'visited')
   const bucket = withStatus(visitedCountries, 'bucketlist')
@@ -56,6 +58,8 @@ export default function CountryList(props: CountryListProps) {
     { value: 'bucketlist', label: 'Bucket list', count: bucket.length },
   ]
   const empty = !loading && visitedCountries.length === 0
+  // Loading or failed: no tabs, sort or legend, just the placeholder.
+  const waiting = loading || loadFailed
 
   // Return focus to the row whose detail just closed (mount only).
   const initialFocus = useRef(focusKey)
@@ -73,11 +77,11 @@ export default function CountryList(props: CountryListProps) {
           <h2 className="truncate text-lg font-bold text-[#1E293B]">Your countries</h2>
           <div className="flex shrink-0 items-center gap-2">
             {/* The mobile sheet's header carries only the Timeline button. */}
-            {!empty && !loading && <div className="hidden lg:block"><SortMenu value={sort} onChange={onSortChange} /></div>}
+            {!empty && !waiting && <div className="hidden lg:block"><SortMenu value={sort} onChange={onSortChange} /></div>}
             {action}
           </div>
         </div>
-        {!empty && !loading && (
+        {!empty && !waiting && (
           <div role="tablist" aria-label="Country lists" className="grid grid-cols-2 gap-1 rounded-[10px] bg-[#EEF2F6] p-1">
             {tabs.map(t => (
               <button
@@ -99,7 +103,9 @@ export default function CountryList(props: CountryListProps) {
         )}
       </div>
 
-      {loading ? <SidebarSkeleton /> : empty ? <SidebarEmpty /> : (
+      {loading ? <SidebarSkeleton /> : loadFailed ? (
+        <p className="px-8 py-10 text-center text-sm text-[#5B6675]">Your countries will appear here once your atlas loads.</p>
+      ) : empty ? <SidebarEmpty /> : (
         <div className="relative min-h-0 flex-1">
           <div ref={panel} role="tabpanel" className="h-full overflow-y-auto px-3 pb-14" onKeyDown={onListKeyDown}>
             {shown.length === 0 ? (
@@ -136,7 +142,7 @@ export default function CountryList(props: CountryListProps) {
           <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-white/0 to-white" />
         </div>
       )}
-      {!empty && !loading && <KeyboardLegend />}
+      {!empty && !waiting && <KeyboardLegend />}
     </div>
   )
 }
