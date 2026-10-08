@@ -28,6 +28,15 @@ export function focusOnMount(state: FocusState): boolean {
   return state !== 'inside'
 }
 
+/**
+ * Whether Esc closes the collapsed mobile country card: not if something
+ * already handled it (a popover, the search), nor while focus is out on
+ * the map's controls or the search, where the map stays in use.
+ */
+export function escClosesSummary({ defaultPrevented, state }: { defaultPrevented: boolean; state: FocusState }): boolean {
+  return !defaultPrevented && state !== 'elsewhere'
+}
+
 /** What had focus as a panel opened, worth returning to on close: only something outside the sidebar. */
 export function openerFrom<T>(active: T | null | undefined, state: FocusState): T | null {
   return state === 'elsewhere' && active ? active : null

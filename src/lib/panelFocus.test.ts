@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { focusOnMount, focusState, openerFrom, returnFocusTarget } from './panelFocus'
+import { escClosesSummary, focusOnMount, focusState, openerFrom, returnFocusTarget } from './panelFocus'
 
 // Stand-ins for elements: just names, with the sidebar's contents listed.
 const body = 'body'
@@ -24,6 +24,22 @@ describe('focusOnMount', () => {
     expect(focusOnMount('lost')).toBe(true) // the clicked row was replaced
     expect(focusOnMount('elsewhere')).toBe(true) // picked from the search
     expect(focusOnMount('inside')).toBe(false) // the sheet handle, expanding / collapsing
+  })
+})
+
+describe('escClosesSummary', () => {
+  it('closes from inside the sheet, or with focus lost', () => {
+    expect(escClosesSummary({ defaultPrevented: false, state: 'inside' })).toBe(true)
+    expect(escClosesSummary({ defaultPrevented: false, state: 'lost' })).toBe(true)
+  })
+
+  it('not with focus out on the map controls or the search', () => {
+    expect(escClosesSummary({ defaultPrevented: false, state: 'elsewhere' })).toBe(false)
+  })
+
+  it('not once something else handled it (the search clearing, a popover closing)', () => {
+    expect(escClosesSummary({ defaultPrevented: true, state: 'lost' })).toBe(false)
+    expect(escClosesSummary({ defaultPrevented: true, state: 'inside' })).toBe(false)
   })
 })
 

@@ -3,6 +3,7 @@ import type { VisitedCountry } from '../types'
 import { getContinent } from '../lib/continents'
 import { countrySummary } from '../lib/mobileSheet'
 import { useFocusOnMount } from '../lib/useFocusOnMount'
+import { escClosesSummary } from '../lib/panelFocus'
 import { currentFocusState, FOCUS_SCOPE_ATTR } from '../lib/usePanelFocus'
 import StatusControl from './StatusControl'
 
@@ -31,9 +32,9 @@ export default function MobileCountrySummary({ country, onClose, onSetStatus, on
   // (their own Esc closes a popover / clears the search, and the map stays in use).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return
-      if (currentFocusState(heading.current?.closest(`[${FOCUS_SCOPE_ATTR}]`) ?? null) === 'elsewhere') return
-      close.current()
+      if (e.key !== 'Escape') return
+      const state = currentFocusState(heading.current?.closest(`[${FOCUS_SCOPE_ATTR}]`) ?? null)
+      if (escClosesSummary({ defaultPrevented: e.defaultPrevented, state })) close.current()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
