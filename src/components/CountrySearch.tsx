@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Country, VisitedCountry } from '../types'
 import { statusOf } from '../lib/visitedCountries'
+import { searchStatusToMark } from '../lib/searchStatus'
 
 interface CountrySearchProps {
   countries: Country[]
@@ -15,6 +16,17 @@ interface CountrySearchProps {
 }
 
 const MAX_RESULTS = 10
+
+const PILL = 'flex items-center gap-1 h-8 px-2.5 text-xs font-semibold rounded-full border transition-colors'
+
+/** Marks the pressed (current) status, as in StatusControl. */
+function Check() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 12l5 5L20 7" />
+    </svg>
+  )
+}
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
@@ -40,8 +52,11 @@ export default function CountrySearch({ countries, visitedCountries, onCountrySe
     return () => window.removeEventListener('keydown', onKey)
   }, [inBar])
 
+  // The pressed button is the country's current status: pressing it again does nothing.
   const handleSelect = (country: Country, status: 'visited' | 'bucketlist') => {
-    onCountrySelect(country, status)
+    const target = searchStatusToMark(statusOf(visitedCountries, country), status)
+    if (!target) return
+    onCountrySelect(country, target)
     setSearchTerm('')
   }
 
@@ -87,25 +102,25 @@ export default function CountrySearch({ countries, visitedCountries, onCountrySe
                     type="button"
                     aria-pressed={activeStatus === 'visited'}
                     onClick={() => handleSelect(country, 'visited')}
-                    className={`h-8 px-2.5 text-xs font-semibold rounded-full border transition-colors ${
+                    className={`${PILL} ${
                       activeStatus === 'visited'
-                        ? 'bg-[#0B7A53] border-[#0B7A53] text-white'
+                        ? 'cursor-default bg-[#0B7A53] border-[#0B7A53] text-white'
                         : 'border-[#0B7A53] text-[#0B7A53] hover:bg-[#0B7A53]/10'
                     }`}
                   >
-                    Visited
+                    {activeStatus === 'visited' && <Check />}Visited
                   </button>
                   <button
                     type="button"
                     aria-pressed={activeStatus === 'bucketlist'}
                     onClick={() => handleSelect(country, 'bucketlist')}
-                    className={`h-8 px-2.5 text-xs font-semibold rounded-full border transition-colors ${
+                    className={`${PILL} ${
                       activeStatus === 'bucketlist'
-                        ? 'bg-[#F2B24E] border-[#9A5B00] text-[#5A3500]'
+                        ? 'cursor-default bg-[#F2B24E] border-[#9A5B00] text-[#5A3500]'
                         : 'border-[#D9A650] text-[#8A5A0B] hover:bg-[#F2B24E]/15'
                     }`}
                   >
-                    Bucket list
+                    {activeStatus === 'bucketlist' && <Check />}Bucket list
                   </button>
                 </div>
               </li>
