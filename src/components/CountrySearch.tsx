@@ -58,7 +58,7 @@ export default function CountrySearch({ countries, visitedCountries, onCountrySe
           type="search"
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Escape') { setSearchTerm(''); e.currentTarget.blur() } }}
+          onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); setSearchTerm(''); e.currentTarget.blur() } }}
           placeholder={welcome ? 'Where have you been?' : floating ? 'Search a country…' : 'Search a country to mark it…'}
           className={`w-full pl-11 text-[#1E293B] placeholder:text-[#5B6675] focus:outline-none ${
             welcome

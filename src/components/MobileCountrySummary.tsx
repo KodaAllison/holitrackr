@@ -1,7 +1,10 @@
+import { useEffect, useRef } from 'react'
 import type { VisitedCountry } from '../types'
 import { getContinent } from '../lib/continents'
 import { countrySummary } from '../lib/mobileSheet'
 import { useFocusOnMount } from '../lib/useFocusOnMount'
+import { escClosesSummary } from '../lib/panelFocus'
+import { currentFocusState, FOCUS_SCOPE_ATTR } from '../lib/usePanelFocus'
 import StatusControl from './StatusControl'
 
 type Status = VisitedCountry['status']
@@ -17,11 +20,25 @@ interface MobileCountrySummaryProps {
 /**
  * Below `lg`, a selected country's collapsed sheet: continent, name, a
  * summary line ("June 2023 · ★★★★ · Food, History"), the status buttons and
- * "Edit journal", which expands the sheet into the full detail panel.
+ * "Edit journal", which expands the sheet into the full detail panel. Esc
+ * closes it, like the desktop panel.
  */
 export default function MobileCountrySummary({ country, onClose, onSetStatus, onRemove, onEditJournal }: MobileCountrySummaryProps) {
   const summary = countrySummary(country)
   const heading = useFocusOnMount<HTMLHeadingElement>()
+  const close = useRef(onClose)
+  useEffect(() => { close.current = onClose })
+  // Esc closes, unless focus is out on the map's controls or the search
+  // (their own Esc closes a popover / clears the search, and the map stays in use).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const state = currentFocusState(heading.current?.closest(`[${FOCUS_SCOPE_ATTR}]`) ?? null)
+      if (escClosesSummary({ defaultPrevented: e.defaultPrevented, state })) close.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [heading])
   return (
     <div className="flex flex-col gap-3.5 px-5 pb-6">
       <div className="flex items-start justify-between gap-3">

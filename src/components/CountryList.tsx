@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { VisitedCountry } from '../types'
 import { groupCountries, type ListSort } from '../lib/countryListModel'
 import { countryKey, withStatus } from '../lib/visitedCountries'
@@ -19,8 +19,6 @@ interface CountryListProps {
   onSelect: (country: VisitedCountry) => void
   onSetStatus: (country: VisitedCountry, status: Status) => void
   onReset?: () => void
-  /** Row to focus on mount, e.g. the country whose detail just closed. */
-  focusKey?: string
   /** The countries could not be loaded: a neutral note, never the first-run empty state. */
   loadFailed?: boolean
   loading?: boolean
@@ -48,8 +46,7 @@ const HEADING = 'flex justify-between px-2 pb-1 text-xs font-semibold uppercase 
  * tabs with counts, and rows grouped by continent (or flat by date / name).
  */
 export default function CountryList(props: CountryListProps) {
-  const { visitedCountries, tab, onTabChange, sort, onSortChange, onSelect, onSetStatus, onReset, focusKey, loading, loadFailed, action } = props
-  const panel = useRef<HTMLDivElement>(null)
+  const { visitedCountries, tab, onTabChange, sort, onSortChange, onSelect, onSetStatus, onReset, loading, loadFailed, action } = props
   const visited = withStatus(visitedCountries, 'visited')
   const bucket = withStatus(visitedCountries, 'bucketlist')
   const shown = tab === 'visited' ? visited : bucket
@@ -61,20 +58,12 @@ export default function CountryList(props: CountryListProps) {
   // Loading or failed: no tabs, sort or legend, just the placeholder.
   const waiting = loading || loadFailed
 
-  // Return focus to the row whose detail just closed (mount only).
-  const initialFocus = useRef(focusKey)
-  useEffect(() => {
-    const key = initialFocus.current
-    if (!key) return
-    const row = [...(panel.current?.querySelectorAll<HTMLButtonElement>('[data-row]') ?? [])].find(r => r.dataset.row === key)
-    row?.focus()
-  }, [])
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-col gap-3 px-5 pb-2 pt-1 lg:pt-4">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="truncate text-lg font-bold text-[#1E293B]">Your countries</h2>
+          {/* Where focus lands when a closed country has no row to return to (CountrySidebar). */}
+          <h2 tabIndex={-1} data-focus-fallback className="truncate text-lg font-bold text-[#1E293B] focus:outline-none">Your countries</h2>
           <div className="flex shrink-0 items-center gap-2">
             {/* The mobile sheet's header carries only the Timeline button. */}
             {!empty && !waiting && <div className="hidden lg:block"><SortMenu value={sort} onChange={onSortChange} /></div>}
@@ -107,7 +96,7 @@ export default function CountryList(props: CountryListProps) {
         <p className="px-8 py-10 text-center text-sm text-[#5B6675]">Your countries will appear here once your atlas loads.</p>
       ) : empty ? <SidebarEmpty /> : (
         <div className="relative min-h-0 flex-1">
-          <div ref={panel} role="tabpanel" className="h-full overflow-y-auto px-3 pb-14" onKeyDown={onListKeyDown}>
+          <div role="tabpanel" className="h-full overflow-y-auto px-3 pb-14" onKeyDown={onListKeyDown}>
             {shown.length === 0 ? (
               <p className="px-6 py-10 text-center text-sm text-[#5B6675]">
                 {tab === 'visited' ? 'Click a country on the map, or search, to mark it visited.' : 'Nothing on your bucket list yet.'}
