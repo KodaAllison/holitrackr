@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useEffect } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, useEffect } from 'react'
 import type { Country, MapFilter, VisitedCountry } from './types'
 import WorldMap from './components/WorldMap'
 import AppBar from './components/AppBar'
@@ -12,7 +12,8 @@ import Toast from './components/Toast'
 import ErrorToast from './components/ErrorToast'
 import ToastStack from './components/ToastStack'
 import MobileBackButton from './components/MobileBackButton'
-import { detectMilestone, markMilestoneSeen, milestoneMessage, seenMilestones, type Milestone } from './lib/milestones'
+import { markMilestoneSeen, milestoneMessage, seenMilestones, type Milestone } from './lib/milestones'
+import { planCountryToggle } from './lib/countryToggle'
 import { journalValuesOf } from './lib/journal'
 import { isPendingVisit, visitValuesOf } from './lib/countryVisits'
 import { useVisitActions } from './lib/useVisitActions'
@@ -28,7 +29,7 @@ import {
   type CountriesClient,
   type CountryJournalUpdates,
 } from './lib/countriesClient'
-import { sameCountry, findCountry, nextVisitedState, statusOf, type CountryIdentity } from './lib/visitedCountries'
+import { sameCountry, findCountry, statusOf, withStatusAction, type CountryIdentity, type StatusAction } from './lib/visitedCountries'
 
 const STORAGE_KEY_PREFIX = 'myatlas-visited-countries'
 const LEGACY_STORAGE_KEY_PREFIX = 'holitrackr-visited-countries'
@@ -98,6 +99,12 @@ interface AppProps {
 function App({ countriesClient = httpCountriesClient }: AppProps) {
   const { data: session, isPending } = useSession()
   const [visitedCountries, setVisitedCountries] = useState<VisitedCountry[]>([])
+  // The latest list for toggleCountry, which plans from it outside a state updater.
+  // A second click (or an ErrorToast Retry closure from an older render) must see
+  // the first click's result, not the list its render captured. toggleCountry
+  // writes it eagerly; the layout effect catches up every other setVisitedCountries.
+  const visitedRef = useRef<VisitedCountry[]>(visitedCountries)
+  useLayoutEffect(() => { visitedRef.current = visitedCountries }, [visitedCountries])
   const [countries, setCountries] = useState<Country[]>([])
   const [sessionCheckTimedOut, setSessionCheckTimedOut] = useState(false)
   const [activeView, setActiveView] = useState<AppView>('map')
@@ -246,10 +253,13 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
 
   /** Returns true when the change reached a milestone (which also focuses the map). */
   const toggleCountry = (country: VisitedCountry | Country, explicitStatus?: 'visited' | 'bucketlist'): boolean => {
+    // Plan once, from the latest list (the ref, not this render's closure), so the
+    // optimistic state, the save and the milestone check all agree. Side effects
+    // stay out of the state updater: StrictMode runs updaters twice.
+    const { action, previous, milestone: reached } = planCountryToggle(visitedRef.current, country, explicitStatus)
+
     // Milestone moments: celebrate once per milestone, per user.
     const userId = session?.user?.id
-    const { next: after, action: planned } = nextVisitedState(visitedCountries, country, explicitStatus)
-    const reached = detectMilestone(visitedCountries, after, country)
     let celebrated = false
     if (userId && reached && !seenMilestones(userId).has(reached.id)) {
       celebrated = true
@@ -257,38 +267,55 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
       setMilestone(reached)
       setMapFocus(prev => ({ country, seq: (prev?.seq ?? 0) + 1, pulse: true }))
     }
-    if (planned.type === 'upsert') {
+    commitStatus(country, action, previous, celebrated)
+    return celebrated
+  }
+
+  /**
+   * Apply a planned status action: optimistic state, Undo toast, then the request.
+   * Idempotent (an upsert of the status it already has, or a remove of an absent
+   * country, changes nothing), so a failed save's Retry replays the action itself
+   * rather than re-toggling, which could turn a save that did land into a delete.
+   */
+  const commitStatus = (
+    country: CountryIdentity,
+    action: StatusAction,
+    previous: VisitedCountry['status'] | undefined,
+    celebrated = false
+  ) => {
+    // The ref is the plan's next list; the updater re-applies the action to
+    // whatever is queued (a visit's stored id, an autosave, a refresh) so none is lost.
+    visitedRef.current = withStatusAction(visitedRef.current, country, action)
+    setVisitedCountries(prev => withStatusAction(prev, country, action))
+    if (action.type === 'upsert') {
       setRemoved(null)
       dismissRemovedVisit()
-      setMarked({ country: { code: country.code, name: country.name }, previous: statusOf(visitedCountries, country), status: planned.status })
+      setMarked({ country: { code: country.code, name: country.name }, previous, status: action.status })
     }
-    setVisitedCountries(prev => {
-      const { next, action } = nextVisitedState(prev, country, explicitStatus)
 
-      // Kept so Undo can wait for it.
-      pendingMark.current = (async () => {
-        try {
-          if (action.type === 'remove') {
-            await countriesClient.remove(country)
-          } else {
-            await countriesClient.add({ code: country.code, name: country.name, status: action.status })
-          }
-        } catch (err) {
-          console.warn('Failed to persist visited country:', err)
-          await refreshCountries()
-          // The mark is undone, so its Undo and any celebration go too.
-          setMarked(prev => (prev && sameCountry(prev.country, country) ? null : prev))
-          if (celebrated) setMilestone(null)
-          setSaveError({
-            message: `Couldn't save ${country.name}. Undone.`,
-            retry: () => { setSaveError(null); toggleCountry(country, explicitStatus) },
-          })
+    // Kept so Undo can wait for it.
+    pendingMark.current = (async () => {
+      try {
+        if (action.type === 'remove') {
+          await countriesClient.remove(country)
+        } else {
+          await countriesClient.add({ code: country.code, name: country.name, status: action.status })
         }
-      })()
-
-      return next
-    })
-    return celebrated
+      } catch (err) {
+        console.warn('Failed to persist visited country:', err)
+        await refreshCountries()
+        // The mark is undone, so its Undo and any celebration go too.
+        setMarked(prev => (prev && sameCountry(prev.country, country) ? null : prev))
+        if (celebrated) setMilestone(null)
+        setSaveError({
+          message: `Couldn't save ${country.name}. Undone.`,
+          retry: () => {
+            setSaveError(null)
+            commitStatus(country, action, statusOf(visitedRef.current, country))
+          },
+        })
+      }
+    })()
   }
 
   // Undo a mark: back to the previous status, or unmarked.
