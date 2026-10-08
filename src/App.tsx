@@ -29,7 +29,7 @@ import {
   type CountriesClient,
   type CountryJournalUpdates,
 } from './lib/countriesClient'
-import { sameCountry, findCountry, type CountryIdentity } from './lib/visitedCountries'
+import { sameCountry, findCountry, statusOf, withStatusAction, type CountryIdentity, type StatusAction } from './lib/visitedCountries'
 
 const STORAGE_KEY_PREFIX = 'myatlas-visited-countries'
 const LEGACY_STORAGE_KEY_PREFIX = 'holitrackr-visited-countries'
@@ -256,9 +256,7 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
     // Plan once, from the latest list (the ref, not this render's closure), so the
     // optimistic state, the save and the milestone check all agree. Side effects
     // stay out of the state updater: StrictMode runs updaters twice.
-    const { next, action, previous, milestone: reached } = planCountryToggle(visitedRef.current, country, explicitStatus)
-    visitedRef.current = next
-    setVisitedCountries(next)
+    const { action, previous, milestone: reached } = planCountryToggle(visitedRef.current, country, explicitStatus)
 
     // Milestone moments: celebrate once per milestone, per user.
     const userId = session?.user?.id
@@ -269,6 +267,26 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
       setMilestone(reached)
       setMapFocus(prev => ({ country, seq: (prev?.seq ?? 0) + 1, pulse: true }))
     }
+    commitStatus(country, action, previous, celebrated)
+    return celebrated
+  }
+
+  /**
+   * Apply a planned status action: optimistic state, Undo toast, then the request.
+   * Idempotent (an upsert of the status it already has, or a remove of an absent
+   * country, changes nothing), so a failed save's Retry replays the action itself
+   * rather than re-toggling, which could turn a save that did land into a delete.
+   */
+  const commitStatus = (
+    country: CountryIdentity,
+    action: StatusAction,
+    previous: VisitedCountry['status'] | undefined,
+    celebrated = false
+  ) => {
+    // The ref is the plan's next list; the updater re-applies the action to
+    // whatever is queued (a visit's stored id, an autosave, a refresh) so none is lost.
+    visitedRef.current = withStatusAction(visitedRef.current, country, action)
+    setVisitedCountries(prev => withStatusAction(prev, country, action))
     if (action.type === 'upsert') {
       setRemoved(null)
       dismissRemovedVisit()
@@ -291,11 +309,13 @@ function App({ countriesClient = httpCountriesClient }: AppProps) {
         if (celebrated) setMilestone(null)
         setSaveError({
           message: `Couldn't save ${country.name}. Undone.`,
-          retry: () => { setSaveError(null); toggleCountry(country, explicitStatus) },
+          retry: () => {
+            setSaveError(null)
+            commitStatus(country, action, statusOf(visitedRef.current, country))
+          },
         })
       }
     })()
-    return celebrated
   }
 
   // Undo a mark: back to the previous status, or unmarked.
