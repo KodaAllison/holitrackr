@@ -86,7 +86,7 @@ statement. Shared query/handler logic is in `src/server/countryVisits.ts`.
 4. On first auth, localStorage data is migrated to the DB
 
 ### Vercel deployment
-`vercel.json` rewrites Better Auth requests to `api/auth/[...all].ts` and leaves other `/api/**` paths to their matching Vercel Functions (`api/countries.ts`, `api/countries/visits.ts`, `api/public/stats.ts`; the two session-scoped ones share their auth + pool setup in `src/server/vercelApi.ts`). Non-API paths fall back to the Vite SPA. `server.ts` mirrors the custom API routes for local development.
+`vercel.json` rewrites Better Auth requests to `api/auth/[...all].ts` and leaves other `/api/**` paths to their matching Vercel Functions (`api/countries.ts`, `api/countries/visits.ts`, `api/public/stats.ts`; the two session-scoped ones share their auth + pool setup in `src/server/vercelApi.ts`). The `/api/countries` and `/api/countries/visits` request logic lives once in `src/server/countriesRequest.ts` and `src/server/countryVisits.ts`; `server.ts` and the Vercel functions are thin adapters. Non-API paths fall back to the Vite SPA. `server.ts` mirrors the custom API routes for local development.
 
 ## Coding Conventions
 
