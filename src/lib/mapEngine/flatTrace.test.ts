@@ -125,6 +125,64 @@ function rowWinding(rings: [number, number][][], py: number): (px: number) => nu
   return px => crossings.reduce((w, [x, dir]) => (x > px ? w + dir : w), 0)
 }
 
+/** Records the segments a stroke would draw (pen-up moves draw nothing). */
+class Segments implements PathSink {
+  list: [number, number, number, number][] = []
+  private at: [number, number] = [0, 0]
+  private start: [number, number] = [0, 0]
+  moveTo(x: number, y: number) { this.at = [x, y]; this.start = [x, y] }
+  lineTo(x: number, y: number) { this.list.push([...this.at, x, y]); this.at = [x, y] }
+  closePath() { if (this.at[0] !== this.start[0] || this.at[1] !== this.start[1]) this.lineTo(...this.start) }
+}
+
+describe('the stroke skips the atlas\'s cuts along 180°', () => {
+  /** The segments of the traced fill rings. */
+  const fillSegments = (rings: [number, number][][]) => {
+    const s = new Segments()
+    for (const ring of rings) {
+      ring.forEach(([x, y], i) => (i ? s.lineTo(x, y) : s.moveTo(x, y)))
+      s.closePath()
+    }
+    return s.list
+  }
+  const key = (s: number[]) => s.map(v => v.toFixed(6)).join()
+
+  it.each([
+    ['Russia', 101], ['Russia', 180], ['Russia', -178], ['Fiji', 101], ['Fiji', 180], ['Fiji', -178],
+  ] as const)('draws no border along 180° through %s on a map centred on %s°, and fills it as before', (name, lon) => {
+    const geometry = country(name).feature.geometry
+    const fill = new Recorder()
+    const stroke = new Segments()
+    expect(traceFlat(geometry, lon, limits.scale, limits.centre, fill, stroke)).toBe(true)
+    // The fill is the same closed rings as without a stroke.
+    const alone = new Recorder()
+    traceFlat(geometry, lon, limits.scale, limits.centre, alone)
+    expect(fill.rings).toEqual(alone.rings)
+    for (const ring of fill.rings) expect(ring[ring.length - 1]).toEqual(ring[0])
+    // A segment both of whose ends are on the ±180° meridian.
+    const projection = projectionAt(limits, lon)
+    const onSeam = (x: number, y: number) => Math.abs(Math.abs(projection.invert?.([x, y])?.[0] ?? 0) - 180) < 1e-6
+    const seamy = ([x0, y0, x1, y1]: number[]) => onSeam(x0, y0) && onSeam(x1, y1)
+    const filled = fillSegments(fill.rings)
+    const cuts = filled.filter(seamy)
+    expect(cuts.length).toBeGreaterThan(0)
+    expect(stroke.list.filter(seamy)).toEqual([])
+    // Every other edge is stroked, exactly where the fill has it.
+    const kept = new Set(filled.filter(s => !seamy(s)).map(key))
+    expect(stroke.list.length).toBe(filled.length - cuts.length)
+    for (const s of stroke.list) expect(kept.has(key(s))).toBe(true)
+  })
+
+  it.each([['France', -150], ['Australia', 100], ['Canada', 77], ['New Zealand', 175]] as const)(
+    'strokes every edge of %s (no cut along 180°) on a map centred on %s°', (name, lon) => {
+      const fill = new Recorder()
+      const stroke = new Segments()
+      traceFlat(country(name).feature.geometry, lon, limits.scale, limits.centre, fill, stroke)
+      expect(stroke.list.map(key)).toEqual(fillSegments(fill.rings).map(key))
+    },
+  )
+})
+
 describe('flatSizes', () => {
   it('measures a country across the antimeridian as itself, not the width of the world', () => {
     const sizeOf = flatSizes(limits)

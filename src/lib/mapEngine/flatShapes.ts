@@ -26,7 +26,7 @@ export function flatSizes(limits: FlatLimits): (c: IndexedCountry) => number {
 export function flatShapes(limits: FlatLimits, lon: number, sizeOf: (c: IndexedCountry) => number): ShapeCache {
   const { scale, centre } = limits
   return new ShapeCache(projectionAt(limits, lon), undefined, undefined, {
-    trace: (c, path) => traceFlat(c.feature.geometry, lon, scale, centre, path),
+    trace: (c, fill, stroke) => traceFlat(c.feature.geometry, lon, scale, centre, fill, stroke),
     sizeOf,
   })
 }

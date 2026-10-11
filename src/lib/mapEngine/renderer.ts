@@ -33,11 +33,12 @@ export interface RenderInput {
 
 /**
  * The flat map's fast path (see `flatTrace.ts`): draws a country straight
- * into a path, or returns false to leave it to d3; and a country's size
- * however the map is turned, for the micro-state dots.
+ * into a fill path and a stroke path (the stroke without the edges where the
+ * atlas cut a country along 180°), or returns false to leave it to d3; and a
+ * country's size however the map is turned, for the micro-state dots.
  */
 export interface FlatShaping {
-  trace: (c: IndexedCountry, path: Path2D) => boolean
+  trace: (c: IndexedCountry, fill: Path2D, stroke: Path2D) => boolean
   sizeOf: (c: IndexedCountry) => number
 }
 
@@ -55,9 +56,12 @@ export class ShapeCache {
   /** Globe only: skips clipping, for countries wholly on the near side. */
   private readonly nearPath: GeoPath<void, GeoPermissibleObjects> | null
   private readonly shapes = new Map<IndexedCountry, Path2D>()
+  /** What strokes a country's borders, where it differs from `shapes` (the flat fast path). */
+  private readonly lines = new Map<IndexedCountry, Path2D>()
   private readonly boxes = new Map<IndexedCountry, [[number, number], [number, number]]>()
   private readonly points = new Map<IndexedCountry, [number, number] | null>()
   private readonly groups = new WeakMap<IndexedCountry[], Path2D>()
+  private readonly lineGroups = new WeakMap<IndexedCountry[], Path2D>()
 
   /**
    * @param facing  globe only: the point facing the viewer.
@@ -74,23 +78,46 @@ export class ShapeCache {
     this.sphere = new Path2D(this.path({ type: 'Sphere' }) ?? '')
   }
 
+  /** A country's shape, for filling. */
   shape(c: IndexedCountry): Path2D {
     let shape = this.shapes.get(c)
     if (!shape) {
-      const traced = this.flat ? new Path2D() : null
-      shape = traced && this.flat?.trace(c, traced) ? traced : new Path2D(this.pathFor(c)(c.feature) ?? '')
+      const [fill, stroke] = this.flat ? [new Path2D(), new Path2D()] : [null, null]
+      if (fill && stroke && this.flat?.trace(c, fill, stroke)) {
+        shape = fill
+        this.lines.set(c, stroke)
+      } else {
+        shape = new Path2D(this.pathFor(c)(c.feature) ?? '')
+      }
       this.shapes.set(c, shape)
     }
     return shape
   }
 
-  /** All countries in one path, for the land fill and border stroke. */
+  /** A country's outline, for stroking its borders, hover and selection. */
+  line(c: IndexedCountry): Path2D {
+    const shape = this.shape(c)
+    return this.lines.get(c) ?? shape
+  }
+
+  /** All countries in one path, for the land fill. */
   all(countries: IndexedCountry[]): Path2D {
-    let group = this.groups.get(countries)
+    return this.group(this.groups, countries, c => this.shape(c))
+  }
+
+  /** All countries' outlines in one path, for the border stroke. */
+  allLines(countries: IndexedCountry[]): Path2D {
+    // Without the flat fast path (the globe, the timeline) outlines are the shapes: share their group.
+    if (!this.flat) return this.all(countries)
+    return this.group(this.lineGroups, countries, c => this.line(c))
+  }
+
+  private group(groups: WeakMap<IndexedCountry[], Path2D>, countries: IndexedCountry[], part: (c: IndexedCountry) => Path2D): Path2D {
+    let group = groups.get(countries)
     if (!group) {
       group = new Path2D()
-      for (const c of countries) group.addPath(this.shape(c))
-      this.groups.set(countries, group)
+      for (const c of countries) group.addPath(part(c))
+      groups.set(countries, group)
     }
     return group
   }
@@ -151,7 +178,7 @@ function outline(input: RenderInput, key: string | null, color: string, width: n
   const { ctx, shapes, transform } = input
   ctx.strokeStyle = color
   ctx.lineWidth = width / transform.k
-  ctx.stroke(shapes.shape(country))
+  ctx.stroke(shapes.line(country))
 }
 
 function microDots(input: RenderInput): Dot<IndexedCountry>[] {
@@ -228,7 +255,7 @@ export function drawMap(input: RenderInput): Cluster<IndexedCountry>[] {
 
   ctx.strokeStyle = MAP_COLORS.border
   ctx.lineWidth = 0.6 / t.k
-  ctx.stroke(shapes.all(input.countries))
+  ctx.stroke(shapes.allLines(input.countries))
 
   if (input.rim) {
     ctx.strokeStyle = MAP_COLORS.border

@@ -11,15 +11,25 @@ import { wrapLon } from './globeMotion'
  * therefore only a per-vertex sideways shift, `x = g(lat) * (lon - lon0)`,
  * with no trigonometry per frame. Both factors are worked out once per
  * vertex, so a frame with a new central meridian costs a multiply-add and a
- * `lineTo` per vertex (about 0.25ms for the detail atlas's ~38k vertices, in
- * Node, against ~15ms through d3's rotate/clip/resample pipeline).
+ * `lineTo` or two per vertex. Tracing the detail atlas's ~38k vertices alone
+ * takes well under 1ms in Node, against ~15ms through d3's rotate/clip/
+ * resample pipeline; a whole new shape set for a frame (Path2Ds, the
+ * grouped paths, Antarctica through d3) is ~2ms against ~22ms (see the PR).
  *
  * A ring the new antimeridian (`lon0 ± 180`) cuts is traced twice rather
  * than clipped (see `traceFlat`); only Antarctica, which spans every
  * longitude, goes through d3. Edges are drawn straight, as projected chords,
- * where d3 would resample them along great circles: on the detail atlas the
- * two differ by at most 0.13px on a 1080px-wide world (one Antarctic edge),
- * so they look the same.
+ * where d3 would resample them along great circles: over the countries this
+ * path draws (all but Antarctica) the two differ by at most 0.016px on a
+ * 1080px-wide world at zoom 1 (0.19px at the 12x maximum), so they look the
+ * same.
+ *
+ * The atlas cuts the countries that cross 180° (Russia's Chukotka and
+ * Wrangel Island, Fiji's Taveuni and Vanua Levu) into pieces along that
+ * meridian, each closed by an edge on it. With 0° in the middle those edges
+ * lay on the world's outline; once the map turns they would cross the
+ * screen, so the stroke (borders, hover and selection outlines) skips them:
+ * see `traceFlat`'s `stroke`.
  */
 export interface PathSink {
   moveTo(x: number, y: number): void
@@ -38,6 +48,8 @@ interface Ring {
   east: number
   /** The ring jumps across ±180° between two vertices (or spans the globe): only d3 can draw it. */
   wraps: boolean
+  /** seam[i]: the edge into vertex i lies on the ±180° meridian (where the atlas cut a country in two). */
+  seam: Uint8Array
 }
 
 const prepared = new WeakMap<Geometry, Ring[]>()
@@ -47,6 +59,7 @@ function prepareRing(ring: Position[]): Ring {
   const lon = new Float64Array(n)
   const gx = new Float64Array(n)
   const gy = new Float64Array(n)
+  const seam = new Uint8Array(n)
   let [west, east, wraps] = [Infinity, -Infinity, false]
   for (let i = 0; i < n; i++) {
     const [l, phi] = [ring[i][0], (ring[i][1] * Math.PI) / 180]
@@ -56,8 +69,14 @@ function prepareRing(ring: Position[]): Ring {
     west = Math.min(west, l)
     east = Math.max(east, l)
     if (i > 0 && Math.abs(l - lon[i - 1]) > 180) wraps = true
+    if (i > 0 && onSeam(l) && onSeam(lon[i - 1]) && Math.sign(l) === Math.sign(lon[i - 1])) seam[i] = 1
   }
-  return { lon, gx, gy, west, east, wraps: wraps || east - west >= 359 }
+  return { lon, gx, gy, west, east, wraps: wraps || east - west >= 359, seam }
+}
+
+/** Within rounding of the ±180° meridian. */
+function onSeam(lon: number): boolean {
+  return Math.abs(Math.abs(lon) - 180) < 1e-6
 }
 
 function ringsOf(geometry: Geometry): Ring[] {
@@ -89,17 +108,28 @@ const EDGE = 1e-9
  * keeps the visible canvas inside the outline), and the two copies' parts
  * inside it are the two halves d3 would clip the ring into. They never
  * overlap, so any fill rule fills them once.
+ *
+ * `stroke`, when given, receives the same rings for stroking in the same
+ * pass, less the edges on the ±180° meridian where the atlas cut a country
+ * in two (they are pen-up moves there, and its rings end on their repeated
+ * first vertex instead of `closePath`, so a break never closes back across
+ * the ring). The fill keeps them: it needs closed rings.
  */
-export function traceFlat(geometry: Geometry, lon0: number, scale: number, [cx, cy]: [number, number], sink: PathSink): boolean {
+export function traceFlat(
+  geometry: Geometry, lon0: number, scale: number, [cx, cy]: [number, number], sink: PathSink, stroke?: PathSink,
+): boolean {
   const rings = ringsOf(geometry)
   if (rings.length === 0 || rings.some(ring => ring.wraps)) return false
   const perDegree = (scale * Math.PI) / 180
-  const trace = ({ lon, gx, gy }: Ring, shift: number) => {
+  const trace = ({ lon, gx, gy, seam }: Ring, shift: number) => {
     for (let i = 0; i < lon.length; i++) {
       const x = cx + perDegree * gx[i] * (lon[i] + shift)
       const y = cy - scale * gy[i]
       if (i === 0) sink.moveTo(x, y)
       else sink.lineTo(x, y)
+      if (!stroke) continue
+      if (i === 0 || seam[i]) stroke.moveTo(x, y)
+      else stroke.lineTo(x, y)
     }
     sink.closePath()
   }
