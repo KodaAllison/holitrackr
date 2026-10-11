@@ -26,6 +26,8 @@ export interface FlatMapOptions extends MapViewOptions {
   viewRef?: React.MutableRefObject<ViewTransform | null>
   /** Keep the world (and "Fit to my countries") clear of floating UI, e.g. the mobile sheet. */
   inset?: MapInset
+  /** How much of the inset's bottom is opaque UI the world may rise under (default: all of it). */
+  coveredBottom?: number
 }
 
 const MAX_ZOOM = FLAT_MAX_ZOOM
@@ -57,10 +59,11 @@ export function useFlatMap(options: FlatMapOptions) {
   const fitted = useRef(false)
 
   const { top, right, bottom, left } = options.inset ?? NO_INSET
+  const coveredBottom = options.coveredBottom ?? bottom
   const inset = useMemo(() => ({ top, right, bottom, left }), [top, right, bottom, left])
   const projection = useMemo(() => flatProjection(size, inset), [size, inset])
   const shapes = useMemo(() => new ShapeCache(projection), [projection])
-  const limits = useMemo(() => flatLimits(size, inset, MAX_ZOOM), [size, inset])
+  const limits = useMemo(() => flatLimits(size, inset, MAX_ZOOM, coveredBottom), [size, inset, coveredBottom])
   const worldWidth = limits.bounds[1][0] - limits.bounds[0][0]
   /** The limits the current pan/zoom was last set up under, to carry it across a resize. */
   const appliedLimits = useRef<FlatLimits | null>(null)

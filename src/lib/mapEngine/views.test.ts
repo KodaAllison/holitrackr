@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SHEET_PEEK } from '../mobileSheet'
 import { geoPath } from 'd3-geo'
 import {
   type FlatLimits, clampView, coverView, flatFit, flatFrame, flatLimits, flatProjection, frameCountry, frameMarked, NO_INSET, rescaleView,
@@ -164,8 +165,8 @@ const CASES = [
   ['small viewport', SMALL, NO_INSET],
 ] as const
 
-/** True when the world's bounding box, drawn under `t`, covers the canvas that isn't under the opaque bottom inset. */
-function covers({ size, bounds: [[x0, y0], [x1, y1]], bottom }: FlatLimits, t: { k: number; x: number; y: number }) {
+/** True when the world's bounding box (not its curved outline, whose corner wedges can show) covers the canvas not under the opaque bottom inset. */
+function boxCovers({ size, bounds: [[x0, y0], [x1, y1]], bottom }: FlatLimits, t: { k: number; x: number; y: number }) {
   const eps = 1e-6
   return t.k * x0 + t.x <= eps && t.k * x1 + t.x >= size.width - eps
     && t.k * y0 + t.y <= eps && t.k * y1 + t.y >= size.height - bottom - eps
@@ -198,7 +199,7 @@ describe('clampView and coverView', () => {
     const limits = flatLimits(size, inset, MAX)
     const view = coverView(limits)
     expect(view.k).toBeCloseTo(limits.minK)
-    expect(covers(limits, view)).toBe(true)
+    expect(boxCovers(limits, view)).toBe(true)
     expect(clampView(view, limits)).toEqual(view)
   })
 
@@ -209,13 +210,13 @@ describe('clampView and coverView', () => {
         const v = clampView({ k, x, y }, limits)
         expect(v.k).toBeGreaterThanOrEqual(limits.minK)
         expect(v.k).toBeLessThanOrEqual(limits.maxK)
-        expect(covers(limits, v)).toBe(true)
+        expect(boxCovers(limits, v)).toBe(true)
       }
     }
   })
 
   it('cannot zoom out past the cover scale or drag the edge in', () => {
-    const limits = flatLimits(MOBILE, INSET, MAX)
+    const limits = flatLimits(MOBILE, INSET, MAX, COVERED)
     expect(clampView({ k: 1, x: 0, y: 0 }, limits).k).toBeCloseTo(limits.minK)
     const dragged = clampView({ k: limits.minK * 2, x: 500, y: 500 }, limits)
     expect(dragged.x).toBeLessThanOrEqual(-dragged.k * limits.bounds[0][0] + 1e-6)
@@ -224,21 +225,21 @@ describe('clampView and coverView', () => {
 
 describe('framing with limits', () => {
   it('lands exactly where the map will, never outside the clamp', () => {
-    const limits = flatLimits(MOBILE, INSET, MAX)
+    const limits = flatLimits(MOBILE, INSET, MAX, COVERED)
     const [[x0, y0]] = limits.bounds
     // A country at the world's top-left corner.
     const fit = frameCountry([[x0, y0], [x0 + 20, y0 + 10]], MOBILE, INSET, 6, 0, limits)
     expect(clampView(fit, limits)).toEqual(fit)
-    expect(covers(limits, fit)).toBe(true)
+    expect(boxCovers(limits, fit)).toBe(true)
   })
 
   it('no marked countries is the cover view', () => {
-    const limits = flatLimits(MOBILE, INSET, MAX)
+    const limits = flatLimits(MOBILE, INSET, MAX, COVERED)
     expect(frameMarked([], MOBILE, INSET, 6, 0, limits)).toEqual(coverView(limits))
   })
 
   it('never zooms out past the cover scale', () => {
-    const limits = flatLimits(MOBILE, INSET, MAX)
+    const limits = flatLimits(MOBILE, INSET, MAX, COVERED)
     expect(flatFit([[0, 0], [1000, 1000]], MOBILE, INSET, 6, 0.85, limits).k).toBeCloseTo(limits.minK)
   })
 })
@@ -249,10 +250,10 @@ describe('rescaleView', () => {
     const landscape = flatLimits({ width: 844, height: 390 }, NO_INSET, MAX)
     const cover = rescaleView(coverView(portrait), portrait, landscape)
     expect(cover.k).toBeCloseTo(landscape.minK)
-    expect(covers(landscape, cover)).toBe(true)
+    expect(boxCovers(landscape, cover)).toBe(true)
     const zoomed = rescaleView({ ...coverView(portrait), k: portrait.minK * 2 }, portrait, landscape)
     expect(zoomed.k).toBeCloseTo(landscape.minK * 2)
-    expect(covers(landscape, zoomed)).toBe(true)
+    expect(boxCovers(landscape, zoomed)).toBe(true)
   })
 
   it('is the identity when the size is unchanged', () => {
@@ -280,13 +281,16 @@ describe('flatFrame (the morph) agrees with the flat map', () => {
   })
 })
 
+// The sheet peek covers its height less its 20px rounded corners (WorldMap's MOBILE_COVERED_BOTTOM).
+const COVERED = SHEET_PEEK - 20
+
 describe('the opaque bottom inset', () => {
-  const limits = flatLimits(MOBILE, INSET, MAX)
+  const limits = flatLimits(MOBILE, INSET, MAX, COVERED)
   const centreY = (lon: number, lat: number, dLon: number, dLat: number, size = MOBILE, inset = INSET) => {
     const p = flatProjection(size, inset)
     const [a, b] = [p([lon - dLon / 2, lat - dLat / 2]), p([lon + dLon / 2, lat + dLat / 2])] as [[number, number], [number, number]]
     const bounds: [[number, number], [number, number]] = [[Math.min(a[0], b[0]), Math.min(a[1], b[1])], [Math.max(a[0], b[0]), Math.max(a[1], b[1])]]
-    const l = flatLimits(size, inset, MAX)
+    const l = flatLimits(size, inset, MAX, COVERED)
     const fit = frameCountry(widenBounds(bounds, spanWidth(l.bounds[1][0] - l.bounds[0][0], 30)), size, inset, 6, 0, l)
     const c = p([lon, lat]) as [number, number]
     return c[1] * fit.k + fit.y
@@ -294,7 +298,8 @@ describe('the opaque bottom inset', () => {
 
   it('lets the world bottom rise above the sheet, but not the top fall below the canvas top', () => {
     const view = clampView({ k: limits.minK * 3, x: 0, y: -1e5 }, limits)
-    expect(view.k * limits.bounds[1][1] + view.y).toBeCloseTo(MOBILE.height - INSET.bottom)
+    expect(view.k * limits.bounds[1][1] + view.y).toBeCloseTo(MOBILE.height - COVERED)
+    expect(view.k * limits.bounds[1][1] + view.y).toBeGreaterThanOrEqual(MOBILE.height - SHEET_PEEK)
     const down = clampView({ k: limits.minK * 3, x: 0, y: 1e5 }, limits)
     expect(down.k * limits.bounds[0][1] + down.y).toBeCloseTo(0)
   })
@@ -303,7 +308,7 @@ describe('the opaque bottom inset', () => {
     for (const [lon, lat, dLon, dLat] of [[172, -41, 12, 13], [-71, -36, 10, 38]]) {
       const y = centreY(lon, lat, dLon, dLat)
       expect(y).toBeGreaterThan(INSET.top)
-      expect(y).toBeLessThan(MOBILE.height - INSET.bottom)
+      expect(y).toBeLessThan(MOBILE.height - COVERED)
     }
   })
 

@@ -68,7 +68,10 @@ export const FLAT_MAX_ZOOM = 12
  * What keeps the flat map covering what the user can see: the world's
  * projected bounds at zoom 1 and the zoom range `[minK, maxK]`. `minK` is the
  * "cover" scale, the smallest zoom at which those bounds fill the visible
- * canvas, so no empty map can be panned or zoomed into view. Used through
+ * canvas. The world's bounding box therefore always covers the canvas, but
+ * the Equal Earth outline is curved, so small wedges outside it can show
+ * near the corners (roughly 5% of the canvas at the desktop world view, up
+ * to about 20% on a phone panned to an edge). Used through
  * `clampView` (d3-zoom's `constrain`), not `translateExtent`, so gestures and
  * programmatic moves agree exactly.
  *
@@ -76,8 +79,9 @@ export const FLAT_MAX_ZOOM = 12
  * floating search band is translucent and leaves map visible beside it, so
  * the world must reach the canvas edge there. The bottom is different: below
  * `lg` the sheet peek is a full-width opaque panel, so an empty strip under it
- * is never seen and the world's bottom edge may rise to the top of the inset
- * (`bottom`), which lets southern countries (NZ, Chile) be framed in the
+ * is never seen and the world's bottom edge may rise by the sheet's real
+ * height (`bottom`: what the sheet covers, not the projection inset; the
+ * caller leaves out the sheet's rounded top corners), which lets southern countries (NZ, Chile) be framed in the
  * clear band. The cover scale is computed for the visible height
  * (canvas minus `bottom`). The inset also shapes the zoom-1 projection (see
  * `flatProjection`), so where the world sits and what "Fit" centres on.
@@ -92,10 +96,12 @@ export interface FlatLimits {
 }
 
 /** The flat map's limits for a canvas `size`; `maxZoom` is the user's zoom-in maximum. */
-export function flatLimits(size: Size, inset: MapInset, maxZoom: number): FlatLimits {
+export function flatLimits(
+  size: Size, inset: MapInset, maxZoom: number, coveredBottom: number = inset.bottom,
+): FlatLimits {
   const bounds = geoPath(flatProjection(size, inset)).bounds({ type: 'Sphere' })
   const [[x0, y0], [x1, y1]] = bounds
-  const { bottom } = usableInset(size, inset)
+  const bottom = usableInset(size, inset) === inset ? Math.min(coveredBottom, inset.bottom) : 0
   const minK = Math.max(size.width / Math.max(1, x1 - x0), (size.height - bottom) / Math.max(1, y1 - y0))
   return { size, bounds, bottom, minK, maxK: Math.max(maxZoom, minK) }
 }
