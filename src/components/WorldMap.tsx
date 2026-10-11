@@ -47,9 +47,11 @@ interface WorldMapProps {
 /** Desktop gets the globe (or flat, by choice); smaller screens are always flat. */
 const DESKTOP_QUERY = '(min-width: 1024px)'
 const SURFACE = 'relative w-full h-full select-none'
-const IDENTITY: ViewTransform = { k: 1, x: 0, y: 0 }
 /** Mobile: fit the world to the part of the map between the floating search/chip and the sheet's peek. */
 const MOBILE_INSET: MapInset = { top: 116, right: 0, bottom: SHEET_PEEK + 8, left: 0 }
+/** What the sheet peek opaquely covers: its height less the rounded top corners (`rounded-t-[20px]` in MobileSheet). */
+const SHEET_CORNER = 20
+const MOBILE_COVERED_BOTTOM = SHEET_PEEK - SHEET_CORNER
 /** Mobile: "Fit to my countries" (and the opening fit) never frames less than about a continent. */
 const MOBILE_MIN_FIT_SPAN = 60
 const HINTS: Record<MapView, string> = {
@@ -68,7 +70,7 @@ export default function WorldMap(props: WorldMapProps) {
   const [interacted, setInteracted] = useState(false)
   const [worldViewSeq, setWorldViewSeq] = useState(0)
   const [preferred, setPreferred] = useState<MapView>(readMapView)
-  const [morph, setMorph] = useState<{ to: MapView; globe: GlobeView; flat: ViewTransform } | null>(null)
+  const [morph, setMorph] = useState<{ to: MapView; globe: GlobeView; flat: ViewTransform | null } | null>(null)
   const globeView = useRef<GlobeView | null>(null)
   const flatView = useRef<ViewTransform | null>(null)
   const savedGlobe = useRef<GlobeView | undefined>(undefined)
@@ -111,7 +113,7 @@ export default function WorldMap(props: WorldMapProps) {
     writeMapView(to)
     const shapes = motionCountries ?? countries
     if (!reducedMotion && shapes) {
-      setMorph({ to, globe, flat: to === 'flat' ? IDENTITY : flatView.current ?? IDENTITY })
+      setMorph({ to, globe, flat: to === 'flat' ? null : flatView.current })
     }
   }
 
@@ -119,7 +121,7 @@ export default function WorldMap(props: WorldMapProps) {
     markIntroPlayed()
     setIntro(false)
     // A saved Flat preference finishes the intro with the unroll.
-    if (preferred === 'flat') setMorph({ to: 'flat', globe: DEFAULT_GLOBE, flat: IDENTITY })
+    if (preferred === 'flat') setMorph({ to: 'flat', globe: DEFAULT_GLOBE, flat: null })
   }
 
   const view: MapView = desktop ? preferred : 'flat'
@@ -161,7 +163,7 @@ export default function WorldMap(props: WorldMapProps) {
           options={{
             ...options, fitOnOpen: true, viewRef: flatView,
             // Mobile opens framed on the user's countries, so waits for them to load.
-            ...(desktop ? {} : { inset: MOBILE_INSET, fitReady: !loading, minFitSpan: MOBILE_MIN_FIT_SPAN }),
+            ...(desktop ? {} : { inset: MOBILE_INSET, coveredBottom: MOBILE_COVERED_BOTTOM, fitReady: !loading, minFitSpan: MOBILE_MIN_FIT_SPAN }),
           }}
           canFit={canFit}
           className={SURFACE}
