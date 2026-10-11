@@ -129,7 +129,7 @@ export function useFlatMap(options: FlatMapOptions) {
     const behavior = d3zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([limits.minK, limits.maxK])
       .extent([[0, 0], [size.width, size.height]])
-      // The world's own bounds, by the same clamp the fits use (see `FlatLimits`).
+      // The world's curved outline, by the same clamp the fits use (see `FlatLimits`).
       .constrain(transform => {
         const { k, x, y } = clampView(transform, limits)
         return zoomIdentity.translate(x, y).scale(k)

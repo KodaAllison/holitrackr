@@ -10,7 +10,7 @@ import { clampView, coverView, FLAT_MAX_ZOOM, flatFrame, flatLimits, globeRadius
 interface MorphMapSurfaceProps {
   direction: 'toFlat' | 'toGlobe'
   globe: GlobeView
-  /** Where the flat view is; null for the opening view (the world at cover scale). */
+  /** Where the flat view is; null for the opening view (the World view, `coverView`). */
   flat: ViewTransform | null
   countries: IndexedCountry[]
   statusOf: (c: IndexedCountry) => VisitedCountry['status'] | undefined

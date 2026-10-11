@@ -1,5 +1,6 @@
 import { geoEqualEarth, geoPath } from 'd3-geo'
 import type { Rotation } from './globeMotion'
+import { outlineHalfWidth, outlineRay, outlineReach } from './outline'
 import type { ViewTransform } from './renderer'
 
 /**
@@ -65,30 +66,45 @@ export function flatProjection({ width, height }: Size, inset: MapInset = NO_INS
 export const FLAT_MAX_ZOOM = 12
 
 /**
- * What keeps the flat map covering what the user can see: the world's
- * projected bounds at zoom 1 and the zoom range `[minK, maxK]`. `minK` is the
- * "cover" scale, the smallest zoom at which those bounds fill the visible
- * canvas. The world's bounding box therefore always covers the canvas, but
- * the Equal Earth outline is curved, so small wedges outside it can show
- * near the corners (roughly 5% of the canvas at the desktop world view, up
- * to about 20% on a phone panned to an edge). Used through
- * `clampView` (d3-zoom's `constrain`), not `translateExtent`, so gestures and
- * programmatic moves agree exactly.
+ * What keeps the flat map covering what the user can see: the visible part
+ * of the canvas (a rectangle) always lies inside the world's curved Equal
+ * Earth outline, so no bare canvas shows past the edge of the map, not even
+ * in the corners. Used through `clampView` (d3-zoom's `constrain`), not
+ * `translateExtent`, so gestures and programmatic moves agree exactly.
  *
- * Top, left and right cover the whole canvas, including under the inset: the
- * floating search band is translucent and leaves map visible beside it, so
- * the world must reach the canvas edge there. The bottom is different: below
- * `lg` the sheet peek is a full-width opaque panel, so an empty strip under it
- * is never seen and the world's bottom edge may rise by the sheet's real
- * height (`bottom`: what the sheet covers, not the projection inset; the
- * caller leaves out the sheet's rounded top corners), which lets southern countries (NZ, Chile) be framed in the
- * clear band. The cover scale is computed for the visible height
- * (canvas minus `bottom`). The inset also shapes the zoom-1 projection (see
+ * The visible rectangle is the whole canvas width and its height less
+ * `bottom`: below `lg` the sheet peek is a full-width opaque panel, so
+ * nothing under it is seen (`bottom` is what the sheet covers, not the
+ * projection inset; the caller leaves out the sheet's rounded top corners),
+ * which lets southern countries (NZ, Chile) be framed in the clear band. The
+ * top is not relaxed: the floating search band is translucent and leaves map
+ * visible beside it. The inset also shapes the zoom-1 projection (see
  * `flatProjection`), so where the world sits and what "Fit" centres on.
+ *
+ * The outline is convex (see `outline.ts`), so the rectangle is inside it when
+ * its four corners are. With the rectangle `2a` by `2b` at zoom 1 (`a = W/2k`,
+ * `b = (H - bottom)/2k`) and its centre `(u, v)` from the outline's centre,
+ * the outline narrowing towards the poles makes the corners nearest a pole
+ * bind: inside iff `|v| + b <= reach(a)` (the height up to which the outline
+ * is at least `a` half-wide) and `|u| + a <= halfWidth(|v| + b)`.
+ *
+ * `minK` is the smallest zoom at which the rectangle fits anywhere: centred,
+ * where the outline is widest, its corners on the outline (where the corner
+ * ray from the centre meets it, `outlineRay`). At `minK` the World view is
+ * the only vertical position; a landscape canvas's corners stop on the
+ * curved sides so it cannot pan sideways either, while a tall phone's stop on
+ * the flat pole lines and it can pan sideways a little. Since both
+ * conditions only loosen as `k` grows (a and b shrink), every zoom in
+ * `[minK, maxK]` has a non-empty pan range in both directions.
  */
 export interface FlatLimits {
   size: Size
+  /** The world's projected bounding box at zoom 1. */
   bounds: Bounds
+  /** The outline's centre at zoom 1 (the projection's translate). */
+  centre: [number, number]
+  /** The projection's scale at zoom 1: outline units to px. */
+  scale: number
   /** Height at the bottom of the canvas that is covered by opaque UI (0 if none). */
   bottom: number
   minK: number
@@ -99,37 +115,73 @@ export interface FlatLimits {
 export function flatLimits(
   size: Size, inset: MapInset, maxZoom: number, coveredBottom: number = inset.bottom,
 ): FlatLimits {
-  const bounds = geoPath(flatProjection(size, inset)).bounds({ type: 'Sphere' })
-  const [[x0, y0], [x1, y1]] = bounds
+  const projection = flatProjection(size, inset)
+  const bounds = geoPath(projection).bounds({ type: 'Sphere' })
+  const [cx, cy] = projection.translate()
+  const scale = projection.scale()
   const bottom = usableInset(size, inset) === inset ? Math.min(coveredBottom, inset.bottom) : 0
-  const minK = Math.max(size.width / Math.max(1, x1 - x0), (size.height - bottom) / Math.max(1, y1 - y0))
-  return { size, bounds, bottom, minK, maxK: Math.max(maxZoom, minK) }
+  const halfW = Math.max(0.5, size.width / 2)
+  const halfH = Math.max(0.5, (size.height - bottom) / 2)
+  // The visible rectangle's corners just touch the outline: b = halfH / (k * scale) = outlineRay(halfW / halfH).
+  const minK = halfH / (scale * outlineRay(halfW / halfH))
+  return { size, bounds, centre: [cx, cy], scale, bottom, minK, maxK: Math.max(maxZoom, minK) }
 }
 
-const within = (v: number, lo: number, hi: number) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)))
+/** Rounding slack (outline units, far under a pixel) within which a view counts as inside, so the clamp is idempotent. */
+const SLACK = 1e-12
+const limit = (v: number, max: number) => Math.max(-max, Math.min(max, v))
 
-/** The nearest pan/zoom inside `limits`, so the visible canvas stays covered by the world. */
-export function clampView(
-  { k, x, y }: ViewTransform,
-  { size, bounds: [[x0, y0], [x1, y1]], bottom, minK, maxK }: FlatLimits,
-): ViewTransform {
-  const kk = within(k, minK, maxK)
-  return {
-    k: kk,
-    x: within(x, size.width - kk * x1, -kk * x0),
-    y: within(y, size.height - bottom - kk * y1, -kk * y0),
+/**
+ * The nearest pan/zoom inside `limits`, so the visible canvas stays inside
+ * the world's outline. The zoom is clamped to `[minK, maxK]` first; then, at
+ * that zoom, a pan already inside is left exactly as it is, and any other
+ * moves the shortest distance (in screen px) to one that is, so a drag into
+ * the curved edge slides along it and a framing near the edge shifts as
+ * little as it can.
+ *
+ * At a zoom the allowed pans are the centres (u, v) with `|v| <= V` and
+ * `|u| <= halfWidth(|v| + b) - a` (see `FlatLimits`), a convex region since
+ * the half-width is concave. The squared distance to it, minimised over u for
+ * each v, is therefore convex in v, and a ternary search on v finds the
+ * nearest point.
+ */
+export function clampView({ k, x, y }: ViewTransform, limits: FlatLimits): ViewTransform {
+  const { size, centre: [cx, cy], scale, bottom, minK, maxK } = limits
+  const kk = Math.min(maxK, Math.max(minK, k))
+  const halfW = size.width / 2
+  const halfH = (size.height - bottom) / 2
+  // The visible rectangle at zoom 1, in outline units: half-size (a, b), centre (u, v) from the outline's centre.
+  const unit = kk * scale
+  const a = halfW / unit
+  const b = halfH / unit
+  const u = ((halfW - x) / kk - cx) / scale
+  const v = ((halfH - y) / kk - cy) / scale
+  const maxV = Math.max(0, outlineReach(a) - b)
+  const maxU = (row: number) => Math.max(0, outlineHalfWidth(Math.abs(row) + b) - a)
+  if (Math.abs(v) <= maxV + SLACK && Math.abs(u) <= maxU(v) + SLACK) return { k: kk, x, y }
+  const cost = (row: number) => (row - v) ** 2 + (limit(u, maxU(row)) - u) ** 2
+  let lo = -maxV
+  let hi = maxV
+  for (let i = 0; i < 80 && hi - lo > SLACK; i++) {
+    const m1 = lo + (hi - lo) / 3
+    const m2 = hi - (hi - lo) / 3
+    if (cost(m1) <= cost(m2)) hi = m2
+    else lo = m1
   }
+  const vv = (lo + hi) / 2
+  const uu = limit(u, maxU(vv))
+  return { k: kk, x: halfW - kk * (cx + scale * uu), y: halfH - kk * (cy + scale * vv) }
 }
 
-/** The widest view, "World view": the world at the cover scale, centred. */
+/** The widest view, "World view": the world at its smallest zoom, centred in the visible canvas. */
 export function coverView(limits: FlatLimits): ViewTransform {
-  const { size, bounds: [[x0, y0], [x1, y1]], minK } = limits
-  return clampView({ k: minK, x: size.width / 2 - minK * (x0 + x1) / 2, y: size.height / 2 - minK * (y0 + y1) / 2 }, limits)
+  const { size, centre: [cx, cy], bottom, minK } = limits
+  return clampView({ k: minK, x: size.width / 2 - minK * cx, y: (size.height - bottom) / 2 - minK * cy }, limits)
 }
 
 /**
  * Carry a view across a resize: the same spot of the world stays at the
- * centre of the canvas, at the same zoom relative to the cover scale.
+ * centre of the canvas, at the same zoom relative to the smallest zoom (`minK`).
  */
 export function rescaleView(t: ViewTransform, from: FlatLimits, to: FlatLimits): ViewTransform {
   const [[fx0, fy0], [fx1, fy1]] = from.bounds
@@ -150,6 +202,14 @@ export function rescaleView(t: ViewTransform, from: FlatLimits, to: FlatLimits):
  * [1, maxZoom]. With `limits` it is also clamped into them, so the target
  * is exactly where the map will land (a framing near the world's edge shifts
  * rather than showing empty space).
+ *
+ * Near the curved edge the shift can be large: the outline slants inwards
+ * towards the poles, so on a tall phone a country on the antimeridian (New
+ * Zealand, Fiji, Chukotka) is pushed to the canvas edge. If that leaves the
+ * bounds' centre past a side of the clear area, the fit zooms in further (up to
+ * `limits.maxK`), since a smaller view reaches less far towards the poles and
+ * so can sit further out; it keeps the first zoom that brings the centre
+ * `EDGE_MARGIN` px inside, else the one that comes closest.
  */
 export function flatFit(
   [[x0, y0], [x1, y1]]: Bounds,
@@ -164,9 +224,29 @@ export function flatFit(
   const k = Math.min(maxZoom, Math.max(1, fill / Math.max((x1 - x0) / w, (y1 - y0) / h)))
   const cx = inset.left + w / 2
   const cy = inset.top + h / 2
-  const fit = { k, x: cx - k * (x0 + x1) / 2, y: cy - k * (y0 + y1) / 2 }
-  return limits ? clampView(fit, limits) : fit
+  const [bx, by] = [(x0 + x1) / 2, (y0 + y1) / 2]
+  const at = (z: number) => ({ k: z, x: cx - z * bx, y: cy - z * by })
+  if (!limits) return at(k)
+  // How far (px) the bounds' centre lands outside the clear area, less the margin. At the top it may go up to the
+  // canvas edge (the search band is translucent), so a country near the north pole sits as it did under a plain
+  // box clamp.
+  const margin = Math.min(EDGE_MARGIN, w / 4, h / 4)
+  const miss = (t: ViewTransform) => {
+    const [px, py] = [t.x + t.k * bx, t.y + t.k * by]
+    return Math.max(0, inset.left + margin - px, px - (inset.left + w - margin), margin - py, py - (inset.top + h - margin))
+  }
+  // The zoom is limited before centring, so the pan is worked out for the zoom the map will use.
+  let best = clampView(at(Math.min(limits.maxK, Math.max(limits.minK, k))), limits)
+  for (let z = best.k; miss(best) > 0 && z < limits.maxK;) {
+    z = Math.min(limits.maxK, z * 1.25)
+    const view = clampView(at(z), limits)
+    if (miss(view) < miss(best)) best = view
+  }
+  return best
 }
+
+/** How far inside the clear area a fit pushed against the world's edge keeps the bounds' centre (px). */
+const EDGE_MARGIN = 40
 
 /** The union of projected bounds, or `null` for none. */
 export function unionBounds(boxes: Iterable<Bounds>): Bounds | null {
