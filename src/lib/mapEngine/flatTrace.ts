@@ -50,6 +50,8 @@ interface Ring {
   wraps: boolean
   /** seam[i]: the edge into vertex i lies on the ±180° meridian (where the atlas cut a country in two). */
   seam: Uint8Array
+  /** Some edge is on the seam, so the ring's stroke stays open. */
+  cut: boolean
 }
 
 const prepared = new WeakMap<Geometry, Ring[]>()
@@ -60,7 +62,7 @@ function prepareRing(ring: Position[]): Ring {
   const gx = new Float64Array(n)
   const gy = new Float64Array(n)
   const seam = new Uint8Array(n)
-  let [west, east, wraps] = [Infinity, -Infinity, false]
+  let [west, east, wraps, cut] = [Infinity, -Infinity, false, false]
   for (let i = 0; i < n; i++) {
     const [l, phi] = [ring[i][0], (ring[i][1] * Math.PI) / 180]
     lon[i] = l
@@ -69,9 +71,12 @@ function prepareRing(ring: Position[]): Ring {
     west = Math.min(west, l)
     east = Math.max(east, l)
     if (i > 0 && Math.abs(l - lon[i - 1]) > 180) wraps = true
-    if (i > 0 && onSeam(l) && onSeam(lon[i - 1]) && Math.sign(l) === Math.sign(lon[i - 1])) seam[i] = 1
+    if (i > 0 && onSeam(l) && onSeam(lon[i - 1]) && Math.sign(l) === Math.sign(lon[i - 1])) {
+      seam[i] = 1
+      cut = true
+    }
   }
-  return { lon, gx, gy, west, east, wraps: wraps || east - west >= 359, seam }
+  return { lon, gx, gy, west, east, wraps: wraps || east - west >= 359, seam, cut }
 }
 
 /** Within rounding of the ±180° meridian. */
@@ -111,9 +116,9 @@ const EDGE = 1e-9
  *
  * `stroke`, when given, receives the same rings for stroking in the same
  * pass, less the edges on the ±180° meridian where the atlas cut a country
- * in two (they are pen-up moves there, and its rings end on their repeated
+ * in two (they are pen-up moves there, and such a ring ends on its repeated
  * first vertex instead of `closePath`, so a break never closes back across
- * the ring). The fill keeps them: it needs closed rings.
+ * it; every other ring is closed, so its corners all get joins). The fill keeps them: it needs closed rings.
  */
 export function traceFlat(
   geometry: Geometry, lon0: number, scale: number, [cx, cy]: [number, number], sink: PathSink, stroke?: PathSink,
@@ -121,7 +126,7 @@ export function traceFlat(
   const rings = ringsOf(geometry)
   if (rings.length === 0 || rings.some(ring => ring.wraps)) return false
   const perDegree = (scale * Math.PI) / 180
-  const trace = ({ lon, gx, gy, seam }: Ring, shift: number) => {
+  const trace = ({ lon, gx, gy, seam, cut }: Ring, shift: number) => {
     for (let i = 0; i < lon.length; i++) {
       const x = cx + perDegree * gx[i] * (lon[i] + shift)
       const y = cy - scale * gy[i]
@@ -132,6 +137,8 @@ export function traceFlat(
       else stroke.lineTo(x, y)
     }
     sink.closePath()
+    // A ring with no cut closes its stroke too, so its first corner gets a join rather than two line caps.
+    if (stroke && !cut) stroke.closePath()
   }
   for (const ring of rings) {
     // The shift of 360° that brings the ring's middle nearest the centre.

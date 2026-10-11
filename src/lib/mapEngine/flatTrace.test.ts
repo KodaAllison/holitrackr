@@ -183,6 +183,40 @@ describe('the stroke skips the atlas\'s cuts along 180°', () => {
   )
 })
 
+/** Counts the commands a path receives. */
+class Commands implements PathSink {
+  moves = 0
+  closes = 0
+  moveTo() { this.moves++ }
+  lineTo() {}
+  closePath() { this.closes++ }
+}
+
+describe('the stroke closes every ring the atlas did not cut', () => {
+  it.each([['France', -150], ['Australia', 100], ['New Zealand', 175]] as const)(
+    'closes each of %s\'s rings (map centred on %s°), so every corner gets a join', (name, lon) => {
+      const fill = new Commands()
+      const stroke = new Commands()
+      traceFlat(country(name).feature.geometry, lon, limits.scale, limits.centre, fill, stroke)
+      expect(stroke.closes).toBe(fill.closes)
+      expect(stroke.moves).toBe(fill.moves)
+    },
+  )
+
+  it.each([['Russia', 101], ['Fiji', 180], ['Fiji', -178]] as const)(
+    'leaves open only the rings of %s cut along 180° (map centred on %s°)', (name, lon) => {
+      const fill = new Commands()
+      const stroke = new Commands()
+      traceFlat(country(name).feature.geometry, lon, limits.scale, limits.centre, fill, stroke)
+      // Some rings are cut (left open), the rest are closed.
+      expect(stroke.closes).toBeLessThan(fill.closes)
+      expect(stroke.closes).toBeGreaterThan(0)
+      // Each cut ring breaks into more pen-up moves than it has rings.
+      expect(stroke.moves).toBeGreaterThan(fill.moves)
+    },
+  )
+})
+
 describe('flatSizes', () => {
   it('measures a country across the antimeridian as itself, not the width of the world', () => {
     const sizeOf = flatSizes(limits)
