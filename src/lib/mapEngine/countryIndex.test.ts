@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { decodeWorld } from '../worldAtlas'
-import { buildCountryIndex, countryAt, MICRO_AREA } from './countryIndex'
+import { geoBounds } from 'd3-geo'
+import { buildCountryIndex, countryAt, mainland, MICRO_AREA } from './countryIndex'
 
 const world = decodeWorld(JSON.parse(
   readFileSync(new URL('../../data/world-detail.topo.json', import.meta.url), 'utf8')
@@ -59,5 +60,17 @@ describe('countryAt', () => {
     // Chukotka, east of 180°, is Russia; Fiji straddles the line.
     expect(countryAt(index, [-175, 66])?.identity.code).toBe('RUS')
     expect(countryAt(index, [178.1, -17.8])?.identity.code).toBe('FJI')
+  })
+})
+
+describe('mainland', () => {
+  it('is the largest landmass, leaving overseas parts out', () => {
+    // Metropolitan France only: no French Guiana in the Americas.
+    const [[west], [east]] = geoBounds(mainland(byName('France')!)) // test data
+    expect(west).toBeGreaterThan(-6)
+    expect(east).toBeLessThan(10)
+    // The contiguous US: no Alaska.
+    const [, [, north]] = geoBounds(mainland(index.find(c => c.identity.code === 'USA')!)) // test data
+    expect(north).toBeLessThan(50)
   })
 })

@@ -1,21 +1,18 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { geoOrthographic, type GeoProjection, type GeoStream } from 'd3-geo'
-import type { CountryIdentity } from '../../types'
-import { countryKey } from '../visitedCountries'
-import { clusterAt, type Cluster } from './clusters'
-import { countryAt, type IndexedCountry } from './countryIndex'
+import { geoOrthographic, type GeoStream } from 'd3-geo'
+import type { IndexedCountry } from './countryIndex'
 import { centerOf, decay, dragRotate, fitGlobe, turnTo, type LonLat, type Rotation } from './globeMotion'
-import { CLUSTER_RADIUS, createHatch, drawMap, screenAnchor, ShapeCache } from './renderer'
+import { pickTarget } from './hitTest'
+import type { MapViewOptions } from './mapView'
+import { drawPulse } from './pulse'
+import { ShapeCache } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
-import type { MapViewOptions } from './useFlatMap'
+import { useMapInteraction } from './useMapInteraction'
 import { DEFAULT_GLOBE, globeRadius, type GlobeView } from './views'
 
 export interface GlobeMapOptions extends MapViewOptions {
   /** Coarse countries, drawn while the globe moves. Falls back to `countries`. */
   motionCountries: IndexedCountry[] | null
-  /** Turn to face this country whenever `seq` changes. */
-  /** With `pulse`, a ring pulses on the country once the turn lands (milestones). */
-  focus?: { country: CountryIdentity; seq: number; pulse?: boolean } | null
   /** Where to start (e.g. the view saved before switching to the flat map). */
   initialView?: GlobeView
   /** Receives the current rotation and zoom, for the globe → flat morph. */
@@ -30,7 +27,6 @@ const IDLE_MS = 4000
 /** A press that moves further than this (px) is a drag, not a click. */
 const CLICK_SLOP = 4
 const IDENTITY = { k: 1, x: 0, y: 0 }
-const PULSE_MS = 1400
 
 interface Turn {
   at: (t: number) => Rotation
@@ -38,20 +34,16 @@ interface Turn {
   duration: number
 }
 
-function prefersReducedMotion(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-}
-
 /**
  * The spinnable globe (orthographic) on a canvas: drag to spin with inertia,
  * wheel or `zoomBy` to zoom, click to turn a country to the front, and a slow
  * idle spin that pauses on hover, drag or selection. The animation loop only
  * runs while something moves; reduced motion turns off inertia, idle spin
- * and animated turns.
+ * and animated turns. Hit-testing, hover, focus and "World view" come from
+ * the shared `useMapInteraction` core.
  */
 export function useGlobeMap(options: GlobeMapOptions) {
   const { containerRef, canvasRef, size } = useCanvasSize()
-  const latest = useRef(options)
   const rotation = useRef<Rotation>((options.initialView ?? DEFAULT_GLOBE).rotate)
   const zoom = useRef((options.initialView ?? DEFAULT_GLOBE).zoom)
   const velocity = useRef<[number, number]>([0, 0])
@@ -59,12 +51,9 @@ export function useGlobeMap(options: GlobeMapOptions) {
   const press = useRef<{ x: number; y: number; t: number; moved: boolean } | null>(null)
   const hovering = useRef(false)
   const lastInput = useRef(0)
-  const clusters = useRef<Cluster<IndexedCountry>[]>([])
-  const hatch = useRef<CanvasPattern | null>(null)
   const frame = useRef(0)
   const lastFrame = useRef(0)
   const idleTimer = useRef(0)
-  const reduced = useRef(prefersReducedMotion())
   const pulse = useRef<{ country: IndexedCountry; start: number } | null>(null)
 
   const radius = globeRadius(size)
@@ -78,9 +67,54 @@ export function useGlobeMap(options: GlobeMapOptions) {
     return clip ? p.clipAngle(90) : p.preclip((stream: GeoStream) => stream)
   }, [radius, size])
 
+  // The callbacks run later (events and effects), so they may use the motion helpers declared below.
+  const { latest, reduced, drawFrame, hitTest, hoverAt } = useMapInteraction(options, {
+    locate: (x, y) => {
+      const r = radius * zoom.current
+      if ((x - size.width / 2) ** 2 + (y - size.height / 2) ** 2 > r * r) return null
+      const lonLat = projectionFor(rotation.current).invert?.([x, y])
+      return lonLat && Number.isFinite(lonLat[0]) ? lonLat : null
+    },
+    // "World view": zoom back out, leaving the rotation where it is.
+    onWorldView: () => {
+      zoom.current = MIN_ZOOM
+      kick()
+    },
+    // External focus (e.g. picked in search): turn the globe to it.
+    onFocus: (match, target) => {
+      turnToCountry(match)
+      // Reduced motion: the turn is instant and there's no pulse (the toast still shows).
+      // A newer focus without a pulse drops one still waiting for the last.
+      pulse.current = target.pulse && !reduced.current
+        ? { country: match, start: performance.now() + (turn.current?.duration ?? 0) }
+        : null
+      kick()
+    },
+  })
+
+  // Frames always run the latest `tick`: a pending frame scheduled before a
+  // resize (or before the data arrived) must not draw with stale size/props.
+  const tickRef = useRef<(now: number) => void>(() => {})
+  const kick = useCallback(() => {
+    if (!frame.current) frame.current = requestAnimationFrame(t => tickRef.current(t))
+  }, [])
+  const kickRef = useRef(kick)
+
+  const turnToPoint = useCallback((point: LonLat) => {
+    velocity.current = [0, 0]
+    const { at, duration } = turnTo(rotation.current, point)
+    if (reduced.current) {
+      rotation.current = at(1)
+    } else {
+      turn.current = { at, start: performance.now(), duration }
+    }
+    kick()
+  }, [kick, reduced])
+  const turnToCountry = useCallback((c: IndexedCountry) => turnToPoint(c.anchor), [turnToPoint])
+
   const spinning = useCallback(() => !reduced.current && !hovering.current && !press.current
     && !latest.current.selectedKey && !document.hidden
-    && performance.now() - lastInput.current > IDLE_MS, [])
+    && performance.now() - lastInput.current > IDLE_MS, [latest, reduced])
 
   const tick = useCallback((now: number) => {
     frame.current = 0
@@ -103,25 +137,23 @@ export function useGlobeMap(options: GlobeMapOptions) {
       moving = true
     }
     moving ||= press.current?.moved === true
-    if (latest.current.viewRef) latest.current.viewRef.current = { rotate: rotation.current, zoom: zoom.current }
-
-    const canvas = canvasRef.current
-    const ctx = canvas?.getContext('2d')
     const opts = latest.current
+    if (opts.viewRef) opts.viewRef.current = { rotate: rotation.current, zoom: zoom.current }
+
     const countries = (moving && opts.motionCountries) || opts.countries || opts.motionCountries
-    if (canvas && ctx && countries && size.width > 0) {
-      hatch.current ??= createHatch(ctx)
+    if (countries) {
       const projection = projectionFor(rotation.current)
       const shapes = new ShapeCache(projection, centerOf(rotation.current), projectionFor(rotation.current, false))
-      clusters.current = drawMap({
-        ctx, ...size, dpr: window.devicePixelRatio || 1,
-        shapes, transform: IDENTITY,
-        countries, statusOf: opts.statusOf, rim: true,
-        hoveredKey: opts.hoveredKey, selectedKey: opts.selectedKey, hatch: hatch.current,
-      })
-      moving = drawPulse(ctx, projection, now) || moving
       // The detailed anchor, so the label doesn't jump when the frame at rest swaps shapes.
-      opts.onSelectedAnchor?.(screenAnchor(shapes, IDENTITY, opts.countries ?? countries, opts.selectedKey))
+      const ctx = drawFrame(canvasRef.current, {
+        size, shapes, transform: IDENTITY, countries, rim: true, anchorCountries: opts.countries ?? countries,
+      })
+      const p = pulse.current
+      if (ctx && p) {
+        const pulsing = drawPulse(ctx, projection(p.country.anchor), now - p.start)
+        if (!pulsing) pulse.current = null
+        moving ||= pulsing
+      }
     }
 
     if (moving) {
@@ -135,17 +167,9 @@ export function useGlobeMap(options: GlobeMapOptions) {
         idleTimer.current = window.setTimeout(() => kickRef.current(), wait)
       }
     }
-  }, [canvasRef, projectionFor, size, spinning])
+  }, [canvasRef, drawFrame, latest, projectionFor, reduced, size, spinning])
 
-  // Frames always run the latest `tick`: a pending frame scheduled before a
-  // resize (or before the data arrived) must not draw with stale size/props.
-  const tickRef = useRef(tick)
-  const kick = useCallback(() => {
-    if (!frame.current) frame.current = requestAnimationFrame(t => tickRef.current(t))
-  }, [])
-  const kickRef = useRef(kick)
-
-  useEffect(() => { latest.current = options; tickRef.current = tick; kickRef.current = kick })
+  useEffect(() => { tickRef.current = tick; kickRef.current = kick })
 
   // Idle spin waits IDLE_MS from mount, not from page load.
   useEffect(() => { lastInput.current = performance.now() }, [])
@@ -159,65 +183,12 @@ export function useGlobeMap(options: GlobeMapOptions) {
     window.clearTimeout(idleTimer.current)
   }, [])
 
-  /** Expanding ring on a milestone country; returns true while still animating. */
-  const drawPulse = (ctx: CanvasRenderingContext2D, projection: GeoProjection, now: number): boolean => {
-    const p = pulse.current
-    if (!p || now < p.start) return p !== null
-    const u = (now - p.start) / PULSE_MS
-    if (u >= 1) {
-      pulse.current = null
-      return false
-    }
-    const at = projection(p.country.anchor)
-    if (!at) return true
-    for (const offset of [0, 0.35]) {
-      const v = u - offset
-      if (v < 0 || v > 0.65) continue
-      const t = v / 0.65
-      ctx.beginPath()
-      ctx.arc(at[0], at[1], 6 + 34 * t, 0, 2 * Math.PI)
-      ctx.strokeStyle = `rgba(11,122,83,${0.8 * (1 - t)})`
-      ctx.lineWidth = 3 * (1 - t) + 1
-      ctx.stroke()
-    }
-    return true
-  }
-
-  const turnToPoint = useCallback((point: LonLat) => {
-    velocity.current = [0, 0]
-    const { at, duration } = turnTo(rotation.current, point)
-    if (reduced.current) {
-      rotation.current = at(1)
-    } else {
-      turn.current = { at, start: performance.now(), duration }
-    }
-    kick()
-  }, [kick])
-  const turnToCountry = useCallback((c: IndexedCountry) => turnToPoint(c.anchor), [turnToPoint])
-
-  // External focus (e.g. picked in search): turn the globe to it.
-  const focusSeq = options.focus?.seq
-  useEffect(() => {
-    const target = latest.current.focus
-    const list = latest.current.countries
-    if (!target || !list) return
-    const key = countryKey(target.country)
-    const match = list.find(c => countryKey(c.identity) === key)
-    if (!match) return
-    turnToCountry(match)
-    // Reduced motion: the turn is instant and there's no pulse (the toast still shows).
-    if (target.pulse && !reduced.current) {
-      pulse.current = { country: match, start: performance.now() + (turn.current?.duration ?? 0) }
-      kick()
-    }
-  }, [focusSeq, countries, turnToCountry, kick])
-
   const zoomBy = useCallback((factor: number) => {
     zoom.current = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom.current * factor))
     lastInput.current = performance.now()
     latest.current.onMoveStart()
     kick()
-  }, [kick])
+  }, [kick, latest])
 
   /** Turn and zoom to frame the marked countries (zoomed out if none). */
   const fitMine = useCallback(() => {
@@ -228,18 +199,7 @@ export function useGlobeMap(options: GlobeMapOptions) {
     latest.current.onMoveStart()
     if (fit) turnToPoint(fit.center)
     else kick()
-  }, [kick, turnToPoint])
-
-  // "World view": zoom back out, leaving the rotation where it is. Only a
-  // change after mount counts, not the value a remount starts with.
-  const worldViewSeq = options.worldViewSeq
-  const seenWorldView = useRef(worldViewSeq)
-  useEffect(() => {
-    if (worldViewSeq === seenWorldView.current) return
-    seenWorldView.current = worldViewSeq
-    zoom.current = MIN_ZOOM
-    kick()
-  }, [worldViewSeq, kick])
+  }, [kick, latest, turnToPoint])
 
   // Wheel needs a non-passive native listener to stop the page scrolling.
   useEffect(() => {
@@ -252,16 +212,6 @@ export function useGlobeMap(options: GlobeMapOptions) {
     canvas.addEventListener('wheel', onWheel, { passive: false })
     return () => canvas.removeEventListener('wheel', onWheel)
   }, [canvasRef, zoomBy])
-
-  const hitTest = useCallback((x: number, y: number) => {
-    const cluster = clusterAt(clusters.current, x, y, CLUSTER_RADIUS)
-    if (cluster) return cluster
-    const list = latest.current.countries
-    const r = radius * zoom.current
-    if (!list || (x - size.width / 2) ** 2 + (y - size.height / 2) ** 2 > r * r) return null
-    const lonLat = projectionFor(rotation.current).invert?.([x, y])
-    return lonLat && Number.isFinite(lonLat[0]) ? countryAt(list, lonLat) : null
-  }, [projectionFor, radius, size])
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     const [x, y] = pointFrom(event)
@@ -298,11 +248,8 @@ export function useGlobeMap(options: GlobeMapOptions) {
     }
     if (event.pointerType === 'touch') return
     hovering.current = true
-    const hit = hitTest(x, y)
-    const country = hit && 'members' in hit ? (hit.members.length === 1 ? hit.members[0] : null) : hit
-    event.currentTarget.style.cursor = hit ? 'pointer' : 'grab'
-    latest.current.onHover(country, x, y)
-  }, [hitTest, kick, radius])
+    hoverAt(x, y, event.currentTarget)
+  }, [hoverAt, kick, latest, radius])
 
   const onPointerUp = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
     const p = press.current
@@ -315,25 +262,24 @@ export function useGlobeMap(options: GlobeMapOptions) {
       return
     }
     const [x, y] = pointFrom(event)
-    const hit = hitTest(x, y)
-    if (!hit) return
-    if ('members' in hit && hit.members.length > 1) {
-      const centre = projectionFor(rotation.current).invert?.([hit.x, hit.y])
-      turnToPoint(centre ?? hit.members[0].anchor)
+    const pick = pickTarget(hitTest(x, y))
+    if (!pick) return
+    if ('cluster' in pick) {
+      const centre = projectionFor(rotation.current).invert?.([pick.cluster.x, pick.cluster.y])
+      turnToPoint(centre ?? pick.cluster.members[0].anchor)
       zoomBy(3)
       return
     }
-    const country = 'members' in hit ? hit.members[0] : hit
     // The country turns to the front, at the centre.
-    latest.current.onPick(country, size.width / 2, size.height / 2)
-    turnToCountry(country)
-  }, [hitTest, kick, projectionFor, size, turnToCountry, turnToPoint, zoomBy])
+    latest.current.onPick(pick.country, size.width / 2, size.height / 2)
+    turnToCountry(pick.country)
+  }, [hitTest, kick, latest, projectionFor, reduced, size, turnToCountry, turnToPoint, zoomBy])
 
   const onPointerLeave = useCallback(() => {
     hovering.current = false
     latest.current.onHover(null, 0, 0)
     kick()
-  }, [kick])
+  }, [kick, latest])
 
   return {
     containerRef,

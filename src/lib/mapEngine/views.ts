@@ -116,6 +116,21 @@ export function frameMarked(
   return flatFit(widenBounds(bounds, minWidth), size, inset, maxZoom)
 }
 
+/**
+ * Focus on one country: the pan/zoom framing `bounds` (its mainland,
+ * projected at zoom 1) inside `inset` with room around it, never narrower
+ * than `minWidth` px at zoom 1, so a small country keeps its neighbours.
+ */
+export function frameCountry(
+  bounds: Bounds,
+  size: Size,
+  inset: MapInset,
+  maxZoom: number,
+  minWidth = 0,
+): ViewTransform {
+  return flatFit(widenBounds(bounds, minWidth), size, inset, maxZoom, 0.7)
+}
+
 /** Where the flat map draws with a pan/zoom transform applied. */
 export function flatFrame(size: Size, t: ViewTransform): { scale: number; translate: [number, number] } {
   const p = flatProjection(size)
