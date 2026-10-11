@@ -3,9 +3,8 @@ import type { Country, CountryIdentity, MapFilter, VisitedCountry } from '../typ
 import { countryKey } from '../lib/visitedCountries'
 import type { IndexedCountry } from '../lib/mapEngine/countryIndex'
 import { useWorldCountries } from '../lib/mapEngine/useWorldCountries'
-import type { ViewTransform } from '../lib/mapEngine/renderer'
 import { useReducedMotion, type MapViewOptions } from '../lib/mapEngine/mapView'
-import { DEFAULT_GLOBE, NO_INSET, type GlobeView, type MapInset } from '../lib/mapEngine/views'
+import { DEFAULT_GLOBE, globeLon, NO_INSET, type FlatView, type GlobeView, type MapInset } from '../lib/mapEngine/views'
 import { SHEET_PEEK } from '../lib/mobileSheet'
 import { introPlayed, markIntroPlayed, readMapView, writeMapView } from '../lib/mapViewPreference'
 import { SHOW_ALL, shownStatus } from '../lib/mapFilter'
@@ -70,9 +69,9 @@ export default function WorldMap(props: WorldMapProps) {
   const [interacted, setInteracted] = useState(false)
   const [worldViewSeq, setWorldViewSeq] = useState(0)
   const [preferred, setPreferred] = useState<MapView>(readMapView)
-  const [morph, setMorph] = useState<{ to: MapView; globe: GlobeView; flat: ViewTransform | null } | null>(null)
+  const [morph, setMorph] = useState<{ to: MapView; globe: GlobeView; flat: FlatView | null } | null>(null)
   const globeView = useRef<GlobeView | null>(null)
-  const flatView = useRef<ViewTransform | null>(null)
+  const flatView = useRef<FlatView | null>(null)
   const savedGlobe = useRef<GlobeView | undefined>(undefined)
   // Once per session, desktop only, and never with reduced motion.
   const [intro, setIntro] = useState(() => !introPlayed())
@@ -162,6 +161,8 @@ export default function WorldMap(props: WorldMapProps) {
         <FlatMapSurface
           options={{
             ...options, fitOnOpen: true, viewRef: flatView,
+            // Opens on the globe's meridian: on desktop that is where the unroll lands (see MorphMapSurface).
+            initialLon: globeLon(savedGlobe.current ?? DEFAULT_GLOBE),
             // Mobile opens framed on the user's countries, so waits for them to load.
             ...(desktop ? {} : { inset: MOBILE_INSET, coveredBottom: MOBILE_COVERED_BOTTOM, fitReady: !loading, minFitSpan: MOBILE_MIN_FIT_SPAN }),
           }}

@@ -2,7 +2,7 @@ import { geoPath } from 'd3-geo'
 import type { VisitedCountry } from '../../types'
 import type { IndexedCountry } from './countryIndex'
 import { ease, type Rotation } from './globeMotion'
-import { createMorphProjection, morphRaw } from './morph'
+import { createMorphProjection, morphRaw, morphRotation } from './morph'
 import { MAP_COLORS } from './palette'
 
 type Status = VisitedCountry['status']
@@ -15,7 +15,8 @@ export interface MorphFrame {
   /** 0 = globe, 1 = flat. */
   t: number
   globe: { rotate: Rotation; scale: number; translate: [number, number] }
-  flat: { scale: number; translate: [number, number] }
+  /** The flat end: `flatFrame` of the view the flat map starts on or left (its central meridian, `lon`, included). */
+  flat: { scale: number; translate: [number, number]; lon: number }
   countries: IndexedCountry[]
   statusOf: (c: IndexedCountry) => Status | undefined
   hatch: CanvasPattern | null
@@ -58,8 +59,8 @@ export function drawMorph(f: MorphFrame) {
   const projection = morph.projection
     .scale(lerp(f.globe.scale, f.flat.scale, t))
     .translate([lerp(f.globe.translate[0], f.flat.translate[0], t), lerp(f.globe.translate[1], f.flat.translate[1], t)])
-    // The flat map is unrotated; longitude is already wrapped, so this is the short way.
-    .rotate([lerp(f.globe.rotate[0], 0, t), lerp(f.globe.rotate[1], 0, t)])
+    // To (or from) the flat map's central meridian, the short way round.
+    .rotate(morphRotation(f.globe.rotate, f.flat.lon, t))
     .precision(0.7)
     .clipAngle(null)
   const path = geoPath(projection, ctx)

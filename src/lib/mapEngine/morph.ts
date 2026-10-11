@@ -1,4 +1,5 @@
 import { geoEqualEarthRaw, geoProjection, type GeoProjection } from 'd3-geo'
+import { wrapLon, type Rotation } from './globeMotion'
 
 /**
  * The globe ⇄ flat "unroll": a projection whose raw function blends an
@@ -28,6 +29,15 @@ export function morphRaw(t: number): Raw {
     const [bx, by] = geoEqualEarthRaw(lambda, phi)
     return [ax + (bx - ax) * t, ay + (by - ay) * t]
   }
+}
+
+/**
+ * The morph's rotation at progress t (0 globe, 1 flat): from the globe's
+ * rotation to the flat map's central meridian `flatLon` with no tilt,
+ * turning the short way round.
+ */
+export function morphRotation([lambda, phi]: Rotation, flatLon: number, t: number): Rotation {
+  return [lambda + wrapLon(-flatLon - lambda) * t, phi * (1 - t)]
 }
 
 /**
