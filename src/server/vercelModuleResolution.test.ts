@@ -10,10 +10,13 @@ const productionModules = [
   'api/countries.ts',
   'api/countries/visits.ts',
   'api/public/stats.ts',
+  'src/server/countriesHandler.ts',
   'src/server/countryPayloads.ts',
   'src/server/countryVisits.ts',
+  'src/server/createAuth.ts',
   'src/server/publicStats.ts',
   'src/server/vercelApi.ts',
+  'src/server/vercelAuth.ts',
 ]
 
 const runtimeImportPattern = /import\s+(?!type\b)[\s\S]*?\sfrom\s+['"](\.\.?\/[^'"]+)['"]/g
