@@ -137,10 +137,14 @@ export interface FlatLimits {
  *
  * The slack is 0 at `minK` and grows linearly to the full amount at
  * `SLACK_RAMP * minK`, so the World view and anything zoomed right out stay
- * wholly inside the outline. The numbers are about the smallest that centre
- * New Zealand, Fiji, Tonga, Samoa, Kiribati and Vanuatu at 6x, 40px clear
- * of the sides, on 390x844, 375x667 and 1280x720 (see the tests); 40/120/120
- * left Fiji 29px from a 390px phone's edge.
+ * wholly inside the outline. The numbers are about the smallest that frame
+ * Fiji, Tonga, Samoa, Kiribati and Vanuatu at 6x, 40px clear of the sides,
+ * on 390x844 and 375x667 (40/120/120 left Fiji 29px from a 390px phone's
+ * edge), and New Zealand there too. On a wide desktop canvas no slack this
+ * small centres New Zealand; `flatFit` then pans it off-centre so its
+ * whole mainland still shows at 6x (see the tests). On a canvas narrower
+ * than 375px all three numbers shrink with the width, so the widest wedge
+ * is at most `SLACK_SHARE` of it.
  */
 export interface PanSlack {
   side: number
@@ -150,6 +154,8 @@ export interface PanSlack {
 export const PAN_SLACK: PanSlack = { side: 45, rows: 140, cap: 120 }
 /** The pan slack is 0 at the World view's zoom and complete by this multiple of it. */
 const SLACK_RAMP = 1.5
+/** The widest wedge is at most this share of the canvas width (the slack scales down on narrower canvases). */
+export const SLACK_SHARE = 0.32
 
 /** The flat map's limits for a canvas `size`; `maxZoom` is the user's zoom-in maximum. */
 export function flatLimits(
@@ -164,12 +170,14 @@ export function flatLimits(
   const halfH = Math.max(0.5, (size.height - bottom) / 2)
   // The visible rectangle's corners just touch the outline: b = halfH / (k * scale) = outlineRay(halfW / halfH).
   const minK = halfH / (scale * outlineRay(halfW / halfH))
-  return { size, bounds, centre: [cx, cy], scale, bottom, slack, minK, maxK: Math.max(maxZoom, minK) }
+  // On a narrow canvas the slack shrinks in proportion, so the widest wedge stays a small share of it.
+  const f = Math.min(1, (SLACK_SHARE * size.width) / Math.max(1, slack.cap))
+  const scaled = { side: slack.side * f, rows: slack.rows * f, cap: slack.cap * f }
+  return { size, bounds, centre: [cx, cy], scale, bottom, slack: scaled, minK, maxK: Math.max(maxZoom, minK) }
 }
 
 /** Rounding slack (outline units, far under a pixel) within which a view counts as inside, so the clamp is idempotent. */
 const SLACK = 1e-12
-const limit = (v: number, max: number) => Math.max(-max, Math.min(max, v))
 
 /**
  * The nearest pan/zoom inside `limits`, so the visible canvas stays inside
@@ -185,7 +193,28 @@ const limit = (v: number, max: number) => Math.max(-max, Math.min(max, v))
  * each v, is therefore convex in v, and a ternary search on v finds the
  * nearest point.
  */
-export function clampView({ k, x, y }: ViewTransform, limits: FlatLimits): ViewTransform {
+export function clampView(t: ViewTransform, limits: FlatLimits): ViewTransform {
+  // Without a box to keep in view the region is never empty (see `FlatLimits`), so there is always an answer.
+  return panWithin(t, limits) ?? t
+}
+
+/**
+ * A screen rectangle `[[left, top], [right, bottom]]` that a box (projected at
+ * zoom 1) must lie inside, as for a fit that must show a whole country.
+ */
+interface Keep {
+  box: Bounds
+  area: Bounds
+}
+
+/**
+ * `clampView`, optionally also keeping `keep.box` inside `keep.area`: the
+ * nearest allowed pan at the clamped zoom, or null when no pan at that zoom
+ * shows the box whole. The extra condition is a rectangle of pans, so the
+ * region stays convex and the same search applies; a result is always a
+ * fixed point of `clampView`.
+ */
+function panWithin({ k, x, y }: ViewTransform, limits: FlatLimits, keep?: Keep): ViewTransform | null {
   const { size, centre: [cx, cy], scale, bottom, slack, minK, maxK } = limits
   const kk = Math.min(maxK, Math.max(minK, k))
   const halfW = size.width / 2
@@ -204,10 +233,44 @@ export function clampView({ k, x, y }: ViewTransform, limits: FlatLimits): ViewT
     const r = Math.abs(row) + b
     return Math.max(0, Math.min(outlineHalfWidth(Math.max(0, r - rows)) + side, outlineHalfWidth(r) + cap) - a)
   }
-  if (Math.abs(v) <= maxV + SLACK && Math.abs(u) <= maxU(v) + SLACK) return { k: kk, x, y }
-  const cost = (row: number) => (row - v) ** 2 + (limit(u, maxU(row)) - u) ** 2
-  let lo = -maxV
-  let hi = maxV
+  // The pans keeping the box inside its area: u in [uLo, uHi], v in [vLo, vHi] (screen x = halfW - kk * (cx + scale * u)).
+  let [uLo, uHi, vLo, vHi] = [-Infinity, Infinity, -Infinity, Infinity]
+  if (keep) {
+    const [[x0, y0], [x1, y1]] = keep.box
+    const [[left, top], [right, down]] = keep.area
+    uLo = (halfW - kk * cx + kk * x1 - right) / unit
+    uHi = (halfW - kk * cx + kk * x0 - left) / unit
+    vLo = (halfH - kk * cy + kk * y1 - down) / unit
+    vHi = (halfH - kk * cy + kk * y0 - top) / unit
+    if (uLo > uHi || vLo > vHi) return null
+  }
+  const uRange = (row: number): [number, number] => [Math.max(-maxU(row), uLo), Math.min(maxU(row), uHi)]
+  const inside = (row: number, col: number) => {
+    const [lo, hi] = uRange(row)
+    return Math.abs(row) <= maxV + SLACK && row >= vLo - SLACK && row <= vHi + SLACK && col >= lo - SLACK && col <= hi + SLACK
+  }
+  if (inside(v, u)) return { k: kk, x, y }
+  // The rows with some allowed pan: maxU falls as |row| grows, so they are |row| <= reach, cut to [vLo, vHi].
+  const need = Math.max(uLo, -uHi)
+  let reach = maxV
+  if (need > 0) {
+    if (maxU(0) < need) return null
+    let [lo, hi] = [0, maxV]
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2
+      if (maxU(mid) >= need) lo = mid
+      else hi = mid
+    }
+    reach = lo
+  }
+  let lo = Math.max(-reach, vLo)
+  let hi = Math.min(reach, vHi)
+  if (lo > hi) return null
+  const nearestU = (row: number) => {
+    const [l, h] = uRange(row)
+    return Math.min(h, Math.max(l, u))
+  }
+  const cost = (row: number) => (row - v) ** 2 + (nearestU(row) - u) ** 2
   for (let i = 0; i < 80 && hi - lo > SLACK; i++) {
     const m1 = lo + (hi - lo) / 3
     const m2 = hi - (hi - lo) / 3
@@ -215,7 +278,7 @@ export function clampView({ k, x, y }: ViewTransform, limits: FlatLimits): ViewT
     else lo = m1
   }
   const vv = (lo + hi) / 2
-  const uu = limit(u, maxU(vv))
+  const uu = nearestU(vv)
   return { k: kk, x: halfW - kk * (cx + scale * uu), y: halfH - kk * (cy + scale * vv) }
 }
 
@@ -248,6 +311,15 @@ export function rescaleView(t: ViewTransform, from: FlatLimits, to: FlatLimits):
  * [1, maxZoom]. With `limits` it is also clamped into them, so the target
  * is exactly where the map will land (a framing near the world's edge shifts
  * rather than showing more than the pan slack's wedge of empty space).
+ *
+ * The shift must not cut the box `keep` (by default `bounds`; the fits pass
+ * the country's own bounds, not the widened ones): the view is the nearest
+ * allowed one that shows `keep` whole in the clear area. Near the outline's
+ * slanted edge there may be none at the asked zoom (the canvas corner
+ * nearest a pole binds), so the zoom steps down to the largest that has
+ * one. If no zoom does (on a phone, a country so far north it sits under the
+ * search band, since the top edge stays strict), it is the plain clamp at
+ * the asked zoom, or a smaller zoom only if that shows clearly more.
  */
 export function flatFit(
   [[x0, y0], [x1, y1]]: Bounds,
@@ -256,6 +328,7 @@ export function flatFit(
   maxZoom: number,
   fill = 0.85,
   limits?: FlatLimits,
+  keep: Bounds = [[x0, y0], [x1, y1]],
 ): ViewTransform {
   const w = Math.max(1, width - inset.left - inset.right)
   const h = Math.max(1, height - inset.top - inset.bottom)
@@ -266,7 +339,52 @@ export function flatFit(
   const at = (z: number) => ({ k: z, x: cx - z * bx, y: cy - z * by })
   if (!limits) return at(k)
   // The zoom is limited before centring, so the pan is worked out for the zoom the map will use.
-  return clampView(at(Math.min(limits.maxK, Math.max(limits.minK, k))), limits)
+  const top = Math.min(limits.maxK, Math.max(limits.minK, k))
+  const area: Bounds = [[inset.left, inset.top], [width - inset.right, height - inset.bottom]]
+  // The nearest view at zoom z that shows the whole of `keep` in the clear area, if any.
+  const whole = (z: number) => panWithin(at(z), limits, { box: keep, area })
+  const exact = whole(top)
+  if (exact) return exact
+  // Near the outline's edge no pan at this zoom may show it whole (the corner nearest a pole binds): step
+  // the zoom out until one does, then narrow down on the largest such zoom.
+  let above = top
+  for (let i = 1; i <= ZOOM_STEPS; i++) {
+    const z = top * Math.pow(limits.minK / top, i / ZOOM_STEPS)
+    if (!whole(z)) {
+      above = z
+      continue
+    }
+    let below = z
+    for (let j = 0; j < 20; j++) {
+      const mid = Math.sqrt(below * above)
+      if (whole(mid)) below = mid
+      else above = mid
+    }
+    return whole(below) ?? clampView(at(below), limits)
+  }
+  // It shows whole at no zoom (e.g. under the search band near a pole): the plain clamp at the asked zoom,
+  // or a smaller zoom if that shows clearly more of it.
+  const shown = (t: ViewTransform) => shownShare(keep, t, { width, height }, inset)
+  let best = clampView(at(top), limits)
+  let bestShown = shown(best)
+  for (let i = 1; i <= ZOOM_STEPS; i++) {
+    const t = clampView(at(top * Math.pow(limits.minK / top, i / ZOOM_STEPS)), limits)
+    const seen = shown(t)
+    if (seen > bestShown + 0.05) [best, bestShown] = [t, seen]
+  }
+  return best
+}
+
+/** Zooms tried between the requested one and minK when a box cannot be wholly shown. */
+const ZOOM_STEPS = 12
+
+/** The share of `box` (projected at zoom 1) that view `t` shows inside the clear area (the canvas less `inset`). */
+export function shownShare([[x0, y0], [x1, y1]]: Bounds, t: ViewTransform, { width, height }: Size, inset: MapInset): number {
+  const [X0, X1, Y0, Y1] = [t.x + t.k * x0, t.x + t.k * x1, t.y + t.k * y0, t.y + t.k * y1]
+  const across = Math.max(0, Math.min(X1, width - inset.right) - Math.max(X0, inset.left))
+  const down = Math.max(0, Math.min(Y1, height - inset.bottom) - Math.max(Y0, inset.top))
+  const area = Math.max(1e-9, (X1 - X0) * (Y1 - Y0))
+  return Math.min(1, (across * down) / area)
 }
 
 /** The union of projected bounds, or `null` for none. */
@@ -307,7 +425,7 @@ export function frameMarked(
 ): ViewTransform {
   const bounds = unionBounds(boxes)
   if (!bounds) return limits ? coverView(limits) : { k: 1, x: 0, y: 0 }
-  return flatFit(widenBounds(bounds, minWidth), size, inset, maxZoom, 0.85, limits)
+  return flatFit(widenBounds(bounds, minWidth), size, inset, maxZoom, 0.85, limits, bounds)
 }
 
 /**
@@ -323,7 +441,7 @@ export function frameCountry(
   minWidth = 0,
   limits?: FlatLimits,
 ): ViewTransform {
-  return flatFit(widenBounds(bounds, minWidth), size, inset, maxZoom, 0.7, limits)
+  return flatFit(widenBounds(bounds, minWidth), size, inset, maxZoom, 0.7, limits, bounds)
 }
 
 /** Where the flat map draws with a pan/zoom transform applied. */

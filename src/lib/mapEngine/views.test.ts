@@ -5,7 +5,7 @@ import { decodeWorld } from '../worldAtlas'
 import { buildCountryIndex, mainland } from './countryIndex'
 import { geoEqualEarthRaw, geoPath } from 'd3-geo'
 import {
-  type Bounds, type FlatLimits, type MapInset, type Size, clampView, coverView, flatFit, flatFrame, flatLimits, flatProjection, frameCountry, frameMarked, NO_INSET, PAN_SLACK, rescaleView,
+  type Bounds, type FlatLimits, type MapInset, type Size, clampView, coverView, flatFit, flatFrame, flatLimits, flatProjection, frameCountry, frameMarked, NO_INSET, PAN_SLACK, rescaleView, shownShare, SLACK_SHARE,
   spanWidth, unionBounds, widenBounds,
 } from './views'
 
@@ -214,7 +214,7 @@ function excess(size: Size, inset: MapInset, t: View, px: number, py: number): n
   return Math.max(0, (Math.abs(ux) - exactHalfWidth(Math.abs(uy))) * p.scale() * t.k)
 }
 
-/** Within the pan slack: no further past the outline than `PAN_SLACK.cap` (plus the 1px tolerance). */
+/** Within the pan slack: no further past the outline than `PAN_SLACK.cap` (plus the 1px tolerance; narrower canvases get less). */
 const MAX_WEDGE = PAN_SLACK.cap + 1
 
 /** The visible rectangle's corners, pulled `pad` px inwards (the 1px tolerance). */
@@ -319,7 +319,7 @@ describe('clampView', () => {
         for (const y of [-1e5, 0, 1e5]) {
           const { share, widest } = bareCanvas(limits, inset, clampView({ k, x, y }, limits))
           // Only sideways wedges, never wider than the slack's cap.
-          expect(widest).toBeLessThanOrEqual(MAX_WEDGE)
+          expect(widest).toBeLessThanOrEqual(limits.slack.cap + 1)
           if (k <= limits.minK) expect(share).toBe(0)
           most = Math.max(most, share)
         }
@@ -327,7 +327,16 @@ describe('clampView', () => {
     }
     // The slack is used: a pan to an edge does show some canvas past the outline.
     expect(most).toBeGreaterThan(0)
-    expect(most).toBeLessThan(PAN_SLACK.cap / size.width)
+    expect(most).toBeLessThan(limits.slack.cap / size.width)
+    expect(limits.slack.cap / size.width).toBeLessThanOrEqual(SLACK_SHARE + 1e-9)
+  })
+
+  it('scales the slack down on a narrow canvas, so a wedge stays a small share of it', () => {
+    expect(flatLimits(DESKTOP, NO_INSET, MAX).slack).toEqual(PAN_SLACK)
+    expect(flatLimits(MOBILE, INSET, MAX, COVERED).slack).toEqual(PAN_SLACK)
+    const small = flatLimits(SMALL, NO_INSET, MAX)
+    expect(small.slack.cap).toBeCloseTo(SLACK_SHARE * SMALL.width)
+    expect(small.slack.side / small.slack.cap).toBeCloseTo(PAN_SLACK.side / PAN_SLACK.cap)
   })
 
   it.each(CASES)('leaves a view already inside the %s alone', (_name, size, inset, covered) => {
@@ -485,28 +494,50 @@ describe('focusing the Pacific edge countries (the pan slack)', () => {
     readFileSync(new URL('../../data/world-detail.topo.json', import.meta.url), 'utf8'),
   )))
   const VIEWPORTS = [
-    ['390x844', MOBILE, INSET, COVERED, SHEET_PEEK],
-    ['375x667', { width: 375, height: 667 }, INSET, COVERED, SHEET_PEEK],
-    ['1280x720', DESKTOP, NO_INSET, 0, 0],
+    ['390x844', MOBILE, INSET, COVERED],
+    ['375x667', { width: 375, height: 667 }, INSET, COVERED],
+    ['1280x720', DESKTOP, NO_INSET, 0],
+    ['1440x900', { width: 1440, height: 900 }, NO_INSET, 0],
+    ['1600x1000', { width: 1600, height: 1000 }, NO_INSET, 0],
   ] as const
-
-  // As useFlatMap focuses: the mainland's bounds, FOCUS_MAX_ZOOM 6, at least 30 degrees across.
-  it.each(VIEWPORTS)('centres them in the clear band on %s, at most 6x', (_name, size, inset, covered, sheet) => {
+  const focus = (name: string, size: Size, inset: MapInset, covered: number) => {
+    const country = index.find(c => c.identity.name === name)
+    if (!country) throw new Error(`no ${name} in the atlas`)
     const p = flatProjection(size, inset)
     const limits = flatLimits(size, inset, MAX, covered)
-    const minWidth = spanWidth(limits.bounds[1][0] - limits.bounds[0][0], 30)
+    const box = geoPath(p).bounds(mainland(country))
+    // As useFlatMap focuses: the mainland's bounds, FOCUS_MAX_ZOOM 6, at least 30 degrees across.
+    const fit = frameCountry(box, size, inset, 6, spanWidth(limits.bounds[1][0] - limits.bounds[0][0], 30), limits)
+    return { fit, box, limits }
+  }
+
+  it.each(VIEWPORTS)('shows the whole mainland in the clear area on %s, at most 6x', (_name, size, inset, covered) => {
     for (const name of ['New Zealand', 'Fiji', 'Tonga', 'Samoa', 'Kiribati', 'Vanuatu']) {
-      const country = index.find(c => c.identity.name === name)
-      expect(country, name).toBeDefined()
-      if (!country) continue
-      const [[x0, y0], [x1, y1]] = geoPath(p).bounds(mainland(country))
-      const fit = frameCountry([[x0, y0], [x1, y1]], size, inset, 6, minWidth, limits)
-      const [x, y] = [fit.x + fit.k * (x0 + x1) / 2, fit.y + fit.k * (y0 + y1) / 2]
+      const { fit, box, limits } = focus(name, size, inset, covered)
       expect(fit.k, name).toBeLessThanOrEqual(6)
+      expect(shownShare(box, fit, size, inset), name).toBeCloseTo(1, 6)
+      expect(clampView(fit, limits), name).toEqual(fit)
+      // And roughly centred, not jammed against a side.
+      const x = fit.x + fit.k * (box[0][0] + box[1][0]) / 2
       expect(x, name).toBeGreaterThanOrEqual(40)
       expect(x, name).toBeLessThanOrEqual(size.width - 40)
-      expect(y, name).toBeGreaterThanOrEqual(inset.top)
-      expect(y, name).toBeLessThanOrEqual(size.height - sheet)
+    }
+  })
+
+  it('keeps New Zealand at 6x on desktop by panning, not by zooming out', () => {
+    for (const size of [DESKTOP, { width: 1440, height: 900 }, { width: 1600, height: 1000 }]) {
+      expect(focus('New Zealand', size, NO_INSET, 0).fit.k).toBeCloseTo(6)
+    }
+  })
+
+  it('leaves the far north on a phone as the strict top edge allows', () => {
+    // The top edge stays at the canvas top, so on a phone these sit under the search band at any zoom:
+    // the fit keeps its zoom rather than zooming out for nothing (measured: 0-3% in the clear band).
+    for (const name of ['Iceland', 'Norway', 'Greenland']) {
+      const { fit, box, limits } = focus(name, MOBILE, INSET, COVERED)
+      expect(fit.k, name).toBeCloseTo(6)
+      expect(shownShare(box, fit, MOBILE, INSET), name).toBeLessThan(0.05)
+      expect(clampView(fit, limits), name).toEqual(fit)
     }
   })
 })
