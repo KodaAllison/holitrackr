@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { geoPath } from 'd3-geo'
-import { flatFit, flatProjection, frameCountry, frameMarked, NO_INSET, spanWidth, unionBounds, widenBounds } from './views'
+import {
+  clampView, coverView, flatFit, flatFrame, flatLimits, flatProjection, frameCountry, frameMarked, NO_INSET, rescaleView,
+  spanWidth, unionBounds, widenBounds,
+} from './views'
 
 const MOBILE = { width: 390, height: 844 }
 const INSET = { top: 116, right: 0, bottom: 264, left: 0 }
@@ -148,5 +151,132 @@ describe('frameCountry', () => {
 
   it('stays at the world view for a country as wide as the map', () => {
     expect(frameCountry(boxOf(-179, -50, 179, 70), MOBILE, INSET, 6, minWidth).k).toBe(1)
+  })
+})
+
+const DESKTOP = { width: 1280, height: 720 }
+const SMALL = { width: 120, height: 90 }
+const MAX = 12
+const CASES = [
+  ['tall phone', MOBILE, INSET],
+  ['tall phone without inset', MOBILE, NO_INSET],
+  ['wide desktop', DESKTOP, NO_INSET],
+  ['small viewport', SMALL, NO_INSET],
+] as const
+
+type Box = [[number, number], [number, number]]
+
+/** True when the world's bounding box, drawn under `t`, covers the whole canvas. */
+function covers(size: { width: number; height: number }, bounds: Box, t: { k: number; x: number; y: number }) {
+  const [[x0, y0], [x1, y1]] = bounds
+  const eps = 1e-6
+  return t.k * x0 + t.x <= eps && t.k * x1 + t.x >= size.width - eps && t.k * y0 + t.y <= eps && t.k * y1 + t.y >= size.height - eps
+}
+
+describe('flatLimits', () => {
+  it.each(CASES)('cover scale makes the world fill the %s', (_name, size, inset) => {
+    const { bounds, minK } = flatLimits(size, inset, MAX)
+    const [[x0, y0], [x1, y1]] = bounds
+    expect(minK * (x1 - x0)).toBeGreaterThanOrEqual(size.width - 1e-6)
+    expect(minK * (y1 - y0)).toBeGreaterThanOrEqual(size.height - 1e-6)
+    // The smallest such scale: one axis fits exactly.
+    const exact = Math.min(minK * (x1 - x0) - size.width, minK * (y1 - y0) - size.height)
+    expect(exact).toBeCloseTo(0, 6)
+  })
+
+  it('starts a tall phone more zoomed in than the contain fit', () => {
+    expect(flatLimits(MOBILE, INSET, MAX).minK).toBeGreaterThan(3)
+  })
+
+  it('keeps the zoom-in maximum, unless the cover scale is already past it', () => {
+    expect(flatLimits(DESKTOP, NO_INSET, MAX).maxK).toBe(MAX)
+    expect(flatLimits({ width: 100, height: 4000 }, NO_INSET, MAX).maxK).toBeGreaterThan(MAX)
+  })
+})
+
+describe('clampView and coverView', () => {
+  it.each(CASES)('the cover view covers the %s and is centred', (_name, size, inset) => {
+    const limits = flatLimits(size, inset, MAX)
+    const view = coverView(limits)
+    expect(view.k).toBeCloseTo(limits.minK)
+    expect(covers(size, limits.bounds, view)).toBe(true)
+    expect(clampView(view, limits)).toEqual(view)
+  })
+
+  it.each(CASES)('keeps every clamped view covering the %s', (_name, size, inset) => {
+    const limits = flatLimits(size, inset, MAX)
+    for (const k of [0.1, 1, limits.minK, limits.minK * 2, 50]) {
+      for (const [x, y] of [[-1e5, -1e5], [1e5, 1e5], [0, 0], [-200, 300]]) {
+        const v = clampView({ k, x, y }, limits)
+        expect(v.k).toBeGreaterThanOrEqual(limits.minK)
+        expect(v.k).toBeLessThanOrEqual(limits.maxK)
+        expect(covers(size, limits.bounds, v)).toBe(true)
+      }
+    }
+  })
+
+  it('cannot zoom out past the cover scale or drag the edge in', () => {
+    const limits = flatLimits(MOBILE, INSET, MAX)
+    expect(clampView({ k: 1, x: 0, y: 0 }, limits).k).toBeCloseTo(limits.minK)
+    const dragged = clampView({ k: limits.minK * 2, x: 500, y: 500 }, limits)
+    expect(dragged.x).toBeLessThanOrEqual(-dragged.k * limits.bounds[0][0] + 1e-6)
+  })
+})
+
+describe('framing with limits', () => {
+  it('lands exactly where the map will, never outside the clamp', () => {
+    const limits = flatLimits(MOBILE, INSET, MAX)
+    const [[x0, y0]] = limits.bounds
+    // A country at the world's top-left corner.
+    const fit = frameCountry([[x0, y0], [x0 + 20, y0 + 10]], MOBILE, INSET, 6, 0, limits)
+    expect(clampView(fit, limits)).toEqual(fit)
+    expect(covers(MOBILE, limits.bounds, fit)).toBe(true)
+  })
+
+  it('no marked countries is the cover view', () => {
+    const limits = flatLimits(MOBILE, INSET, MAX)
+    expect(frameMarked([], MOBILE, INSET, 6, 0, limits)).toEqual(coverView(limits))
+  })
+
+  it('never zooms out past the cover scale', () => {
+    const limits = flatLimits(MOBILE, INSET, MAX)
+    expect(flatFit([[0, 0], [1000, 1000]], MOBILE, INSET, 6, 0.85, limits).k).toBeCloseTo(limits.minK)
+  })
+})
+
+describe('rescaleView', () => {
+  it('keeps the relative zoom across a rotation, still covering', () => {
+    const portrait = flatLimits(MOBILE, INSET, MAX)
+    const landscape = flatLimits({ width: 844, height: 390 }, NO_INSET, MAX)
+    const cover = rescaleView(coverView(portrait), portrait, landscape)
+    expect(cover.k).toBeCloseTo(landscape.minK)
+    expect(covers(landscape.size, landscape.bounds, cover)).toBe(true)
+    const zoomed = rescaleView({ ...coverView(portrait), k: portrait.minK * 2 }, portrait, landscape)
+    expect(zoomed.k).toBeCloseTo(landscape.minK * 2)
+    expect(covers(landscape.size, landscape.bounds, zoomed)).toBe(true)
+  })
+
+  it('is the identity when the size is unchanged', () => {
+    const limits = flatLimits(DESKTOP, NO_INSET, MAX)
+    const view = clampView({ k: limits.minK * 3, x: -900, y: -700 }, limits)
+    const back = rescaleView(view, limits, limits)
+    expect(back.k).toBeCloseTo(view.k)
+    expect(back.x).toBeCloseTo(view.x)
+    expect(back.y).toBeCloseTo(view.y)
+  })
+})
+
+describe('flatFrame (the morph) agrees with the flat map', () => {
+  it('draws the cover view so the world fills the canvas', () => {
+    const view = coverView(flatLimits(DESKTOP, NO_INSET, MAX))
+    const { scale, translate } = flatFrame(DESKTOP, view)
+    const p = flatProjection(DESKTOP)
+    expect(scale).toBeCloseTo(p.scale() * view.k)
+    expect(translate[0]).toBeCloseTo(p.translate()[0] * view.k + view.x)
+    const [[x0, y0], [x1, y1]] = geoPath(flatProjection(DESKTOP).scale(scale).translate(translate)).bounds({ type: 'Sphere' })
+    expect(x0).toBeLessThanOrEqual(1e-6)
+    expect(x1).toBeGreaterThanOrEqual(DESKTOP.width - 1e-6)
+    expect(y0).toBeLessThanOrEqual(1e-6)
+    expect(y1).toBeGreaterThanOrEqual(DESKTOP.height - 1e-6)
   })
 })

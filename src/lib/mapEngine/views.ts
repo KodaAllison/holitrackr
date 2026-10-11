@@ -1,4 +1,4 @@
-import { geoEqualEarth } from 'd3-geo'
+import { geoEqualEarth, geoPath } from 'd3-geo'
 import type { Rotation } from './globeMotion'
 import type { ViewTransform } from './renderer'
 
@@ -57,9 +57,80 @@ export function flatProjection({ width, height }: Size, inset: MapInset = NO_INS
 }
 
 /**
+ * What keeps the flat map covering its canvas: the world's projected bounds
+ * at zoom 1 (the pan limit, used as d3-zoom's `translateExtent`) and the zoom
+ * range `[minK, maxK]`. `minK` is the "cover" scale, the smallest zoom at
+ * which those bounds fill the whole canvas, so no empty space can be panned
+ * or zoomed into view.
+ *
+ * The limits deliberately cover the *whole* canvas, not just the part inside
+ * the inset: floating controls (search, sheet peek) are translucent or leave
+ * gaps, and a clamp to the inset area alone would show empty strips under
+ * and around them. The inset still shapes the zoom-1 projection (see
+ * `flatProjection`), and so where the world sits and what "Fit" centres on.
+ */
+/** The most the flat map zooms in (the +/- buttons and gestures). */
+export const FLAT_MAX_ZOOM = 12
+
+export interface FlatLimits {
+  size: Size
+  bounds: Bounds
+  minK: number
+  maxK: number
+}
+
+/** The flat map's limits for a canvas `size`; `maxZoom` is the user's zoom-in maximum. */
+export function flatLimits(size: Size, inset: MapInset, maxZoom: number): FlatLimits {
+  const bounds = geoPath(flatProjection(size, inset)).bounds({ type: 'Sphere' })
+  const [[x0, y0], [x1, y1]] = bounds
+  const minK = Math.max(size.width / Math.max(1, x1 - x0), size.height / Math.max(1, y1 - y0))
+  return { size, bounds, minK, maxK: Math.max(maxZoom, minK) }
+}
+
+const within = (v: number, lo: number, hi: number) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)))
+
+/** The nearest pan/zoom inside `limits`, so the canvas stays covered by the world. */
+export function clampView(
+  { k, x, y }: ViewTransform,
+  { size, bounds: [[x0, y0], [x1, y1]], minK, maxK }: FlatLimits,
+): ViewTransform {
+  const kk = within(k, minK, maxK)
+  return {
+    k: kk,
+    x: within(x, size.width - kk * x1, -kk * x0),
+    y: within(y, size.height - kk * y1, -kk * y0),
+  }
+}
+
+/** The widest view, "World view": the world at the cover scale, centred. */
+export function coverView(limits: FlatLimits): ViewTransform {
+  const { size, bounds: [[x0, y0], [x1, y1]], minK } = limits
+  return clampView({ k: minK, x: size.width / 2 - minK * (x0 + x1) / 2, y: size.height / 2 - minK * (y0 + y1) / 2 }, limits)
+}
+
+/**
+ * Carry a view across a resize: the same spot of the world stays at the
+ * centre of the canvas, at the same zoom relative to the cover scale.
+ */
+export function rescaleView(t: ViewTransform, from: FlatLimits, to: FlatLimits): ViewTransform {
+  const [[fx0, fy0], [fx1, fy1]] = from.bounds
+  const [[tx0, ty0], [tx1, ty1]] = to.bounds
+  const u = ((from.size.width / 2 - t.x) / t.k - fx0) / Math.max(1, fx1 - fx0)
+  const v = ((from.size.height / 2 - t.y) / t.k - fy0) / Math.max(1, fy1 - fy0)
+  const k = t.k / from.minK * to.minK
+  return clampView({
+    k,
+    x: to.size.width / 2 - k * (tx0 + u * (tx1 - tx0)),
+    y: to.size.height / 2 - k * (ty0 + v * (ty1 - ty0)),
+  }, to)
+}
+
+/**
  * The pan/zoom that frames `bounds` (projected at zoom 1) in the part of
  * the canvas inside `inset`, filling at most `fill` of it, zoom clamped to
- * [1, maxZoom].
+ * [1, maxZoom]. With `limits` it is also clamped into them, so the target
+ * is exactly where the map will land (a framing near the world's edge shifts
+ * rather than showing empty space).
  */
 export function flatFit(
   [[x0, y0], [x1, y1]]: Bounds,
@@ -67,13 +138,15 @@ export function flatFit(
   inset: MapInset,
   maxZoom: number,
   fill = 0.85,
+  limits?: FlatLimits,
 ): ViewTransform {
   const w = Math.max(1, width - inset.left - inset.right)
   const h = Math.max(1, height - inset.top - inset.bottom)
   const k = Math.min(maxZoom, Math.max(1, fill / Math.max((x1 - x0) / w, (y1 - y0) / h)))
   const cx = inset.left + w / 2
   const cy = inset.top + h / 2
-  return { k, x: cx - k * (x0 + x1) / 2, y: cy - k * (y0 + y1) / 2 }
+  const fit = { k, x: cx - k * (x0 + x1) / 2, y: cy - k * (y0 + y1) / 2 }
+  return limits ? clampView(fit, limits) : fit
 }
 
 /** The union of projected bounds, or `null` for none. */
@@ -110,10 +183,11 @@ export function frameMarked(
   inset: MapInset,
   maxZoom: number,
   minWidth = 0,
+  limits?: FlatLimits,
 ): ViewTransform {
   const bounds = unionBounds(boxes)
-  if (!bounds) return { k: 1, x: 0, y: 0 }
-  return flatFit(widenBounds(bounds, minWidth), size, inset, maxZoom)
+  if (!bounds) return limits ? coverView(limits) : { k: 1, x: 0, y: 0 }
+  return flatFit(widenBounds(bounds, minWidth), size, inset, maxZoom, 0.85, limits)
 }
 
 /**
@@ -127,13 +201,16 @@ export function frameCountry(
   inset: MapInset,
   maxZoom: number,
   minWidth = 0,
+  limits?: FlatLimits,
 ): ViewTransform {
-  return flatFit(widenBounds(bounds, minWidth), size, inset, maxZoom, 0.7)
+  return flatFit(widenBounds(bounds, minWidth), size, inset, maxZoom, 0.7, limits)
 }
 
 /** Where the flat map draws with a pan/zoom transform applied. */
-export function flatFrame(size: Size, t: ViewTransform): { scale: number; translate: [number, number] } {
-  const p = flatProjection(size)
+export function flatFrame(
+  size: Size, t: ViewTransform, inset: MapInset = NO_INSET,
+): { scale: number; translate: [number, number] } {
+  const p = flatProjection(size, inset)
   const [tx, ty] = p.translate()
   return { scale: p.scale() * t.k, translate: [tx * t.k + t.x, ty * t.k + t.y] }
 }

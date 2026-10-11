@@ -10,7 +10,10 @@ import { drawPulse } from './pulse'
 import { ShapeCache, type ViewTransform } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
 import { useMapInteraction } from './useMapInteraction'
-import { flatProjection, frameCountry, frameMarked, NO_INSET, spanWidth, type MapInset } from './views'
+import {
+  clampView, coverView, FLAT_MAX_ZOOM, flatLimits, flatProjection, frameCountry, frameMarked, NO_INSET, rescaleView, spanWidth,
+  type FlatLimits, type MapInset,
+} from './views'
 
 export interface FlatMapOptions extends MapViewOptions {
   /** Once the data is in, animate to fit the user's marked countries. */
@@ -25,7 +28,7 @@ export interface FlatMapOptions extends MapViewOptions {
   inset?: MapInset
 }
 
-const MAX_ZOOM = 12
+const MAX_ZOOM = FLAT_MAX_ZOOM
 const FIT_MAX_ZOOM = 6
 const FIT_MS = 750
 /** Focus frames a country at most this zoomed in, and at least this many degrees of longitude across. */
@@ -57,10 +60,10 @@ export function useFlatMap(options: FlatMapOptions) {
   const inset = useMemo(() => ({ top, right, bottom, left }), [top, right, bottom, left])
   const projection = useMemo(() => flatProjection(size, inset), [size, inset])
   const shapes = useMemo(() => new ShapeCache(projection), [projection])
-  const worldWidth = useMemo(() => {
-    const [[x0], [x1]] = geoPath(projection).bounds({ type: 'Sphere' })
-    return x1 - x0
-  }, [projection])
+  const limits = useMemo(() => flatLimits(size, inset, MAX_ZOOM), [size, inset])
+  const worldWidth = limits.bounds[1][0] - limits.bounds[0][0]
+  /** The limits the current pan/zoom was last set up under, to carry it across a resize. */
+  const appliedLimits = useRef<FlatLimits | null>(null)
   const minFitSpan = options.minFitSpan
 
   // The callbacks run later (events and effects), so they may use the motion helpers declared below.
@@ -70,12 +73,12 @@ export function useFlatMap(options: FlatMapOptions) {
       return projection.invert?.([(x - t.x) / t.k, (y - t.y) / t.k]) ?? null
     },
     // "World view": back out to the whole map.
-    onWorldView: () => { animateTo(zoomIdentity) },
+    onWorldView: () => { animateTo(coverView(limits)) },
     // External focus (search, the list, a milestone): pan/zoom to the country.
     onFocus: (country, target) => {
       fitted.current = true
       const fit = frameCountry(
-        geoPath(projection).bounds(mainland(country)), size, inset, FOCUS_MAX_ZOOM, spanWidth(worldWidth, FOCUS_MIN_SPAN),
+        geoPath(projection).bounds(mainland(country)), size, inset, FOCUS_MAX_ZOOM, spanWidth(worldWidth, FOCUS_MIN_SPAN), limits,
       )
       const landsIn = animateTo(fit)
       // Reduced motion: the move is instant and there's no pulse (the toast still shows).
@@ -121,10 +124,10 @@ export function useFlatMap(options: FlatMapOptions) {
     const canvas = canvasRef.current
     if (!canvas || size.width === 0) return
     const behavior = d3zoom<HTMLCanvasElement, unknown>()
-      .scaleExtent([1, MAX_ZOOM])
+      .scaleExtent([limits.minK, limits.maxK])
       .extent([[0, 0], [size.width, size.height]])
-      // The inset lets the view pan the world into the clear area, not past it.
-      .translateExtent([[-inset.left, -inset.top], [size.width + inset.right, size.height + inset.bottom]])
+      // The world's own bounds: the canvas stays covered (see `FlatLimits`).
+      .translateExtent(limits.bounds)
       // Only the user's own pans and zooms, not programmatic fits (they have no sourceEvent).
       .on('start', event => {
         if (!event.sourceEvent) return
@@ -140,11 +143,16 @@ export function useFlatMap(options: FlatMapOptions) {
         requestDraw()
       })
     const selection = select(canvas)
-    selection.call(behavior).call(behavior.transform, pendingView.current ?? zoomIdentity)
+    // d3's `transform` does not apply the extents, so the start view is clamped here:
+    // one asked for earlier, else the current view carried across the resize, else the cover view.
+    const prev = appliedLimits.current
+    const start = pendingView.current ?? (prev ? rescaleView(transform.current, prev, limits) : coverView(limits))
+    selection.call(behavior).call(behavior.transform, toZoom(clampView(start, limits)))
     pendingView.current = null
+    appliedLimits.current = limits
     zoomBehavior.current = behavior
     return () => { selection.on('.zoom', null) }
-  }, [canvasRef, latest, size, inset, requestDraw])
+  }, [canvasRef, latest, size, limits, requestDraw])
 
   /**
    * Animate the pan/zoom to `target` (instantly with reduced motion, or
@@ -161,29 +169,31 @@ export function useFlatMap(options: FlatMapOptions) {
     const from = transform.current
     cancelAnimationFrame(fitAnim.current)
     if (reduced.current) {
-      selection.call(behavior.transform, toZoom(target))
+      selection.call(behavior.transform, toZoom(clampView(target, limits)))
       return 0
     }
     const start = performance.now()
     const step = (now: number) => {
       const u = ease(Math.min(1, (now - start) / FIT_MS))
       const k = from.k * Math.pow(target.k / from.k, u)
-      selection.call(behavior.transform, zoomIdentity
-        .translate(from.x + (target.x - from.x) * u, from.y + (target.y - from.y) * u).scale(k))
+      // Each step is clamped too: a straight-line move between two valid views can clip a corner.
+      selection.call(behavior.transform, toZoom(clampView(
+        { k, x: from.x + (target.x - from.x) * u, y: from.y + (target.y - from.y) * u }, limits,
+      )))
       if (u < 1) fitAnim.current = requestAnimationFrame(step)
     }
     fitAnim.current = requestAnimationFrame(step)
     return FIT_MS
-  }, [canvasRef, reduced])
+  }, [canvasRef, reduced, limits])
 
   /** Pan/zoom to frame the marked countries (the whole world if none). */
   const fitMine = useCallback(() => {
     const { countries, statusOf } = latest.current
     if (!countries || size.width === 0) return
     const boxes = countries.filter(c => statusOf(c)).map(c => shapes.bounds(c))
-    const fit = frameMarked(boxes, size, inset, FIT_MAX_ZOOM, spanWidth(worldWidth, minFitSpan ?? 0))
+    const fit = frameMarked(boxes, size, inset, FIT_MAX_ZOOM, spanWidth(worldWidth, minFitSpan ?? 0), limits)
     animateTo(fit)
-  }, [animateTo, latest, shapes, size, inset, worldWidth, minFitSpan])
+  }, [animateTo, latest, shapes, size, inset, worldWidth, minFitSpan, limits])
 
   /** The +/- buttons: zoom about the centre, within the zoom limits. */
   const zoomBy = useCallback((factor: number) => {
