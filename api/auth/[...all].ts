@@ -1,49 +1,6 @@
-import { betterAuth } from "better-auth";
 import { toNodeHandler } from "better-auth/node";
 import type { IncomingMessage, ServerResponse } from "http";
-import { createNeonPool } from "../../src/server/neonPool.js";
-
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-  throw new Error("[auth] Missing required environment variable: DATABASE_URL");
-}
-
-const cleanUrl = databaseUrl.replace(/[&?]channel_binding=[^&]*/g, "");
-
-const baseURL =
-  process.env.BETTER_AUTH_URL ||
-  (process.env.VERCEL_PROJECT_PRODUCTION_URL
-    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-    : process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:5173");
-
-const trustedOrigins = new Set([baseURL]);
-if (process.env.VERCEL_URL)
-  trustedOrigins.add(`https://${process.env.VERCEL_URL}`);
-if (process.env.VERCEL_PROJECT_PRODUCTION_URL)
-  trustedOrigins.add(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`);
-if (process.env.VERCEL_BRANCH_URL)
-  trustedOrigins.add(`https://${process.env.VERCEL_BRANCH_URL}`);
-
-const pool = createNeonPool(cleanUrl);
-
-const auth = betterAuth({
-  database: pool,
-  baseURL,
-  secret: process.env.BETTER_AUTH_SECRET,
-  socialProviders: {
-    google: {
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    },
-  },
-  session: {
-    expiresIn: 60 * 60 * 24 * 7,
-    updateAge: 60 * 60 * 24,
-  },
-  trustedOrigins: [...trustedOrigins],
-});
+import { auth } from "../../src/server/vercelAuth.js";
 
 const handler = toNodeHandler(auth);
 

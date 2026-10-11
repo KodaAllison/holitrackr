@@ -1,5 +1,5 @@
-import { betterAuth } from "better-auth";
 import { Pool } from "pg";
+import { createAuth } from "../server/createAuth";
 
 function getRequiredEnv(name: string): string {
   const value = process.env[name];
@@ -17,6 +17,7 @@ const googleClientId = getRequiredEnv("GOOGLE_CLIENT_ID");
 const googleClientSecret = getRequiredEnv("GOOGLE_CLIENT_SECRET");
 const databaseUrl = getRequiredEnv("DATABASE_URL");
 
+// Dev server only (server.ts): a plain pg pool; Vercel uses src/server/vercelAuth.ts.
 const authConfig = {
   database: new Pool({
     connectionString: databaseUrl,
@@ -26,20 +27,14 @@ const authConfig = {
     connectionTimeoutMillis: 5000,
     query_timeout: 10000,
   }),
-  baseURL,
-  secret,
-  socialProviders: {
-    google: {
-      clientId: googleClientId,
-      clientSecret: googleClientSecret,
-    },
-  },
-  session: {
-    expiresIn: 60 * 60 * 24 * 7, // 7 days
-    updateAge: 60 * 60 * 24, // 1 day
-  },
-  trustedOrigins: [baseURL],
 };
 
-export const auth = betterAuth(authConfig);
+export const auth = createAuth({
+  database: authConfig.database,
+  baseURL,
+  trustedOrigins: [baseURL],
+  secret,
+  googleClientId,
+  googleClientSecret,
+});
 export { authConfig };
