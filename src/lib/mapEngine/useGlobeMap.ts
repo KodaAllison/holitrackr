@@ -84,10 +84,11 @@ export function useGlobeMap(options: GlobeMapOptions) {
     onFocus: (match, target) => {
       turnToCountry(match)
       // Reduced motion: the turn is instant and there's no pulse (the toast still shows).
-      if (target.pulse && !reduced.current) {
-        pulse.current = { country: match, start: performance.now() + (turn.current?.duration ?? 0) }
-        kick()
-      }
+      // A newer focus without a pulse drops one still waiting for the last.
+      pulse.current = target.pulse && !reduced.current
+        ? { country: match, start: performance.now() + (turn.current?.duration ?? 0) }
+        : null
+      kick()
     },
   })
 

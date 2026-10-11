@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { Cluster } from './clusters'
 import { countryAt, type IndexedCountry } from './countryIndex'
+import { focusAction, type FocusReapply } from './focus'
 import { findIndexed, hitAt, hoverTarget } from './hitTest'
 import type { MapFocus, MapViewOptions } from './mapView'
 import { useReducedMotion } from './mapView'
@@ -20,13 +21,12 @@ export interface MapMotion {
   locate: (x: number, y: number) => [number, number] | null
   /** "World view": zoom back out to the whole world. */
   onWorldView: () => void
-  /**
-   * Bring `country` into view. `fresh` is false for a focus that was already
-   * there when the view opened (e.g. set before switching views).
-   */
-  onFocus: (country: IndexedCountry, focus: MapFocus, fresh: boolean) => void
+  /** Bring `country` into view. */
+  onFocus: (country: IndexedCountry, focus: MapFocus) => void
   /** Hold focus requests until the view can move (default true). */
   focusReady?: boolean
+  /** A focus already set when the view opened: see `FocusReapply` (default 'always'). */
+  reapplyFocus?: FocusReapply
 }
 
 export interface FrameInput {
@@ -96,12 +96,14 @@ export function useMapInteraction<O extends MapViewOptions>(options: O, motion: 
   const focusSeq = options.focus?.seq
   const openingFocus = useRef(focusSeq)
   const { countries } = options
-  const focusReady = motion.focusReady ?? true
+  const focusReady = (motion.focusReady ?? true) && countries !== null
   useEffect(() => {
-    const target = latest.current.focus
-    if (!target || !focusReady) return
-    const match = findIndexed(countries, target.country)
-    if (match) motionRef.current.onFocus(match, target, target.seq !== openingFocus.current)
+    const { focus, selectedKey } = latest.current
+    const target = focusAction({
+      focus, openingSeq: openingFocus.current, selectedKey, ready: focusReady, reapply: motionRef.current.reapplyFocus ?? 'always',
+    })
+    const match = target && findIndexed(countries, target.country)
+    if (target && match) motionRef.current.onFocus(match, target)
   }, [focusSeq, countries, focusReady, latest, motionRef])
 
   return { latest, reduced, drawFrame, hitTest, hoverAt }

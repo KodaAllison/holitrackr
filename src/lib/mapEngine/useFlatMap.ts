@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { geoPath } from 'd3-geo'
 import { select } from 'd3-selection'
 import { zoom as d3zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom'
-import { countryKey } from '../visitedCountries'
 import { mainland, type IndexedCountry } from './countryIndex'
 import { ease } from './globeMotion'
 import { pickTarget } from './hitTest'
@@ -73,21 +72,20 @@ export function useFlatMap(options: FlatMapOptions) {
     // "World view": back out to the whole map.
     onWorldView: () => { animateTo(zoomIdentity) },
     // External focus (search, the list, a milestone): pan/zoom to the country.
-    onFocus: (country, target, fresh) => {
-      // One set before this view opened (e.g. on the globe) counts only while it is still open.
-      if (!fresh && countryKey(country.identity) !== latest.current.selectedKey) return
+    onFocus: (country, target) => {
       fitted.current = true
       const fit = frameCountry(
         geoPath(projection).bounds(mainland(country)), size, inset, FOCUS_MAX_ZOOM, spanWidth(worldWidth, FOCUS_MIN_SPAN),
       )
       const landsIn = animateTo(fit)
       // Reduced motion: the move is instant and there's no pulse (the toast still shows).
-      if (target.pulse && !reduced.current) {
-        pulse.current = { country, start: performance.now() + landsIn }
-        requestDraw()
-      }
+      // A newer focus without a pulse drops one still waiting for the last.
+      pulse.current = target.pulse && !reduced.current ? { country, start: performance.now() + landsIn } : null
+      requestDraw()
     },
     focusReady: size.width > 0,
+    // One set before this view opened (e.g. on the globe) counts only while its country is still open.
+    reapplyFocus: 'selected',
   })
 
   // Frames always run the latest `draw`, so one scheduled before a resize uses the new size.
@@ -127,8 +125,15 @@ export function useFlatMap(options: FlatMapOptions) {
       .extent([[0, 0], [size.width, size.height]])
       // The inset lets the view pan the world into the clear area, not past it.
       .translateExtent([[-inset.left, -inset.top], [size.width + inset.right, size.height + inset.bottom]])
-      // Only the user's own pans and zooms, not programmatic fits.
-      .on('start', event => { if (event.sourceEvent) latest.current.onMoveStart() })
+      // Only the user's own pans and zooms, not programmatic fits (they have no sourceEvent).
+      .on('start', event => {
+        if (!event.sourceEvent) return
+        // The user takes over: stop any fit/focus move, and play a waiting pulse now.
+        cancelAnimationFrame(fitAnim.current)
+        const p = pulse.current
+        if (p && p.start > performance.now()) p.start = performance.now()
+        latest.current.onMoveStart()
+      })
       .on('zoom', event => {
         transform.current = event.transform
         if (latest.current.viewRef) latest.current.viewRef.current = event.transform
