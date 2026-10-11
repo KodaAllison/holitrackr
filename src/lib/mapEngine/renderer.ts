@@ -32,10 +32,22 @@ export interface RenderInput {
 }
 
 /**
+ * The flat map's fast path (see `flatTrace.ts`): draws a country straight
+ * into a path, or returns false to leave it to d3; and a country's size
+ * however the map is turned, for the micro-state dots.
+ */
+export interface FlatShaping {
+  trace: (c: IndexedCountry, path: Path2D) => boolean
+  sizeOf: (c: IndexedCountry) => number
+}
+
+/**
  * Projected shapes as Path2D, built lazily and kept for the projection's
- * lifetime. The flat map keeps one per resize (pan/zoom is a canvas
- * transform on top, so frames only rasterise); the globe needs a new one per
- * rotation, and `facing` then hides anchors on the far side.
+ * lifetime. The flat map keeps one per central meridian (pan/zoom is a
+ * canvas transform on top, so frames that only zoom or pan up and down just
+ * rasterise; a sideways pan turns the world and traces a new one through
+ * `flat`); the globe needs a new one per rotation, and `facing` then hides
+ * anchors on the far side.
  */
 export class ShapeCache {
   readonly sphere: Path2D
@@ -50,8 +62,11 @@ export class ShapeCache {
   /**
    * @param facing  globe only: the point facing the viewer.
    * @param near    globe only: the same projection without horizon clipping.
+   * @param flat    flat map only: its fast path.
    */
-  constructor(readonly projection: GeoProjection, readonly facing?: [number, number], near?: GeoProjection) {
+  constructor(
+    readonly projection: GeoProjection, readonly facing?: [number, number], near?: GeoProjection, private readonly flat?: FlatShaping,
+  ) {
     this.path = geoPath(projection)
     // Clipping tests every polygon against the horizon, which dominates a
     // globe frame. Countries entirely in front don't need it.
@@ -62,7 +77,8 @@ export class ShapeCache {
   shape(c: IndexedCountry): Path2D {
     let shape = this.shapes.get(c)
     if (!shape) {
-      shape = new Path2D(this.pathFor(c)(c.feature) ?? '')
+      const traced = this.flat ? new Path2D() : null
+      shape = traced && this.flat?.trace(c, traced) ? traced : new Path2D(this.pathFor(c)(c.feature) ?? '')
       this.shapes.set(c, shape)
     }
     return shape
@@ -91,6 +107,8 @@ export class ShapeCache {
 
   /** Largest projected dimension at zoom 1, in CSS px. */
   size(c: IndexedCountry): number {
+    // On the flat map, not cut in two by the antimeridian (Kiribati), so a micro-state is a dot however the map turns.
+    if (this.flat) return this.flat.sizeOf(c)
     const [[x0, y0], [x1, y1]] = this.bounds(c)
     return Math.max(x1 - x0, y1 - y0)
   }

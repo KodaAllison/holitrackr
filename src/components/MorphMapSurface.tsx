@@ -3,15 +3,17 @@ import type { VisitedCountry } from '../types'
 import type { IndexedCountry } from '../lib/mapEngine/countryIndex'
 import { drawMorph } from '../lib/mapEngine/drawMorph'
 import { ease } from '../lib/mapEngine/globeMotion'
-import { createHatch, type ViewTransform } from '../lib/mapEngine/renderer'
+import { createHatch } from '../lib/mapEngine/renderer'
 import { useCanvasSize } from '../lib/mapEngine/useCanvasSize'
-import { clampView, coverView, FLAT_MAX_ZOOM, flatFrame, flatLimits, globeRadius, NO_INSET, type GlobeView } from '../lib/mapEngine/views'
+import {
+  clampView, coverView, FLAT_MAX_ZOOM, flatFrame, flatLimits, globeLon, globeRadius, NO_INSET, type FlatView, type GlobeView,
+} from '../lib/mapEngine/views'
 
 interface MorphMapSurfaceProps {
   direction: 'toFlat' | 'toGlobe'
   globe: GlobeView
-  /** Where the flat view is; null for the opening view (the World view, `coverView`). */
-  flat: ViewTransform | null
+  /** Where the flat view is; null for the opening view (the World view about the globe's meridian). */
+  flat: FlatView | null
   countries: IndexedCountry[]
   statusOf: (c: IndexedCountry) => VisitedCountry['status'] | undefined
   onDone: () => void
@@ -33,9 +35,10 @@ export default function MorphMapSurface({
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!ctx || size.width === 0) return
-    // The flat view the morph starts or lands on is the one useFlatMap draws: same limits, so no jump at the end.
+    // The flat view the morph starts or lands on is the one useFlatMap draws: same limits and
+    // meridian (it opens on the globe's), so no jump at the end.
     const limits = flatLimits(size, NO_INSET, FLAT_MAX_ZOOM)
-    const view = clampView(flat ?? coverView(limits), limits)
+    const view = clampView(flat ?? coverView(limits, globeLon(globe)), limits)
     const hatch = createHatch(ctx)
     const start = performance.now()
     let frame = 0
@@ -46,7 +49,7 @@ export default function MorphMapSurface({
         ctx, ...size, dpr: window.devicePixelRatio || 1,
         t: direction === 'toFlat' ? e : 1 - e,
         globe: { rotate: globe.rotate, scale: globeRadius(size) * globe.zoom, translate: [size.width / 2, size.height / 2] },
-        flat: flatFrame(size, view),
+        flat: flatFrame(limits, view),
         countries, statusOf, hatch,
       })
       if (u < 1) frame = requestAnimationFrame(step)

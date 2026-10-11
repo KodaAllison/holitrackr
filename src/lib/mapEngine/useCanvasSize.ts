@@ -32,6 +32,21 @@ export function useCanvasSize() {
   return { containerRef, canvasRef, size }
 }
 
+/**
+ * The screen row (CSS px, relative to `canvas`) of the pointer behind a
+ * d3-zoom event: the mouse or wheel, or the middle of the touches (a pinch's
+ * centre). Null for a change with no pointer (a programmatic zoom).
+ */
+export function eventRow(source: unknown, canvas: HTMLCanvasElement): number | null {
+  if (typeof TouchEvent !== 'undefined' && source instanceof TouchEvent) {
+    const touches = Array.from(source.touches)
+    if (touches.length === 0) return null
+    const top = canvas.getBoundingClientRect().top
+    return touches.reduce((sum, t) => sum + t.clientY - top, 0) / touches.length
+  }
+  return source instanceof MouseEvent ? source.clientY - canvas.getBoundingClientRect().top : null
+}
+
 /** The pointer's position relative to the event's target element. */
 export function pointFrom(event: React.PointerEvent | React.MouseEvent): [number, number] {
   const rect = event.currentTarget.getBoundingClientRect()
