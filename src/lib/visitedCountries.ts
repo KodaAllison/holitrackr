@@ -105,3 +105,21 @@ export function nextVisitedState(
       : prev.map(v => (sameCountry(v, country) ? { ...v, status } : v))
   return { next, action: { type: 'upsert', status } }
 }
+
+/**
+ * Apply a planned `action` to `list`. Unlike `nextVisitedState` this is
+ * idempotent: an upsert sets the status (keeping the entry's journal and
+ * visits) or appends the country; a remove filters it out. Safe to run on a
+ * list that differs from the one the action was planned from, and to replay.
+ */
+export function withStatusAction(
+  list: VisitedCountry[],
+  country: CountryIdentity,
+  action: StatusAction
+): VisitedCountry[] {
+  if (action.type === 'remove') return list.filter(v => !sameCountry(v, country))
+  const { status } = action
+  return hasCountry(list, country)
+    ? list.map(v => (sameCountry(v, country) ? { ...v, status } : v))
+    : [...list, { code: country.code, name: country.name, status }]
+}

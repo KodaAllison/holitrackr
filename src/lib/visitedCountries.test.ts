@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { VisitedCountry } from '../types/country'
-import { nextVisitedState } from './visitedCountries'
+import { nextVisitedState, withStatusAction } from './visitedCountries'
 
 const spain = { code: 'ESP', name: 'Spain' }
 const france = { code: '-99', name: 'France' }
@@ -74,5 +74,37 @@ describe('nextVisitedState identity and purity', () => {
     nextVisitedState(prev, spain, 'visited')
     nextVisitedState(prev, france)
     expect(prev).toEqual(snapshot)
+  })
+})
+
+describe('withStatusAction', () => {
+  it('upserts in place, keeping the journal and visits', () => {
+    const prev: VisitedCountry[] = [
+      { ...spain, status: 'bucketlist', notes: 'Someday', rating: 4, visits: [{ id: 7, visitedAt: '2025-05' }] },
+    ]
+    expect(withStatusAction(prev, spain, { type: 'upsert', status: 'visited' })).toEqual([
+      { ...spain, status: 'visited', notes: 'Someday', rating: 4, visits: [{ id: 7, visitedAt: '2025-05' }] },
+    ])
+  })
+
+  it('applies to a list that changed since the plan, keeping the newer entries', () => {
+    // Planned from a list where France's new visit was still pending (-1);
+    // by the time the updater runs it has its stored id.
+    const plannedFrom: VisitedCountry[] = [{ ...france, status: 'visited', visits: [{ id: -1, visitedAt: '2026-01' }] }]
+    const { action } = nextVisitedState(plannedFrom, spain)
+    const prev: VisitedCountry[] = [{ ...france, status: 'visited', visits: [{ id: 42, visitedAt: '2026-01' }] }]
+    expect(withStatusAction(prev, spain, action)).toEqual([
+      { ...france, status: 'visited', visits: [{ id: 42, visitedAt: '2026-01' }] },
+      { ...spain, status: 'visited' },
+    ])
+  })
+
+  it('is idempotent, so a Retry can replay it after the save did land', () => {
+    const upsert = { type: 'upsert', status: 'visited' } as const
+    const once = withStatusAction([], spain, upsert)
+    // An explicit-status re-toggle here would plan a remove; the action keeps the country.
+    expect(withStatusAction(once, spain, upsert)).toEqual(once)
+    const removed = withStatusAction(once, spain, { type: 'remove' })
+    expect(withStatusAction(removed, spain, { type: 'remove' })).toEqual([])
   })
 })
