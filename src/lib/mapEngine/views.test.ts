@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { SHEET_PEEK } from '../mobileSheet'
+import { decodeWorld } from '../worldAtlas'
+import { buildCountryIndex, mainland } from './countryIndex'
 import { geoEqualEarthRaw, geoPath } from 'd3-geo'
 import {
-  type Bounds, type FlatLimits, type MapInset, type Size, clampView, coverView, flatFit, flatFrame, flatLimits, flatProjection, frameCountry, frameMarked, NO_INSET, rescaleView,
+  type Bounds, type FlatLimits, type MapInset, type Size, clampView, coverView, flatFit, flatFrame, flatLimits, flatProjection, frameCountry, frameMarked, NO_INSET, PAN_SLACK, rescaleView,
   spanWidth, unionBounds, widenBounds,
 } from './views'
 
@@ -186,24 +189,60 @@ function inWorld(size: Size, inset: MapInset, t: View, px: number, py: number): 
   return inv !== undefined && Math.abs(inv[0]) <= Math.PI
 }
 
+/** The exact outline's half-width (outline units) at height v, by bisection on the ±180° meridian. */
+function exactHalfWidth(v: number): number {
+  let lo = 0
+  let hi = Math.PI / 2
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2
+    if (geoEqualEarthRaw(Math.PI, mid)[1] < v) lo = mid
+    else hi = mid
+  }
+  return geoEqualEarthRaw(Math.PI, lo)[0]
+}
+
+/**
+ * How far (screen px, sideways) the point (px, py) under view `t` lies past
+ * the world's exact outline: 0 inside it, Infinity past a pole line.
+ */
+function excess(size: Size, inset: MapInset, t: View, px: number, py: number): number {
+  const p = flatProjection(size, inset)
+  const [cx, cy] = p.translate()
+  const ux = ((px - t.x) / t.k - cx) / p.scale()
+  const uy = (cy - (py - t.y) / t.k) / p.scale()
+  if (Math.abs(uy) > POLE + 1e-9) return Infinity
+  return Math.max(0, (Math.abs(ux) - exactHalfWidth(Math.abs(uy))) * p.scale() * t.k)
+}
+
+/** Within the pan slack: no further past the outline than `PAN_SLACK.cap` (plus the 1px tolerance). */
+const MAX_WEDGE = PAN_SLACK.cap + 1
+
 /** The visible rectangle's corners, pulled `pad` px inwards (the 1px tolerance). */
 function corners({ size, bottom }: FlatLimits, pad = 1): [number, number][] {
   const [x0, y0, x1, y1] = [pad, pad, size.width - pad, size.height - bottom - pad]
   return [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]
 }
 
-/** Share of a `n` x `n` grid over the visible canvas that falls outside the world. */
-function outsideShare(limits: FlatLimits, inset: MapInset, t: View, n = 60): number {
+/**
+ * Bare canvas in the visible area under `t`, sampled on an `n` x `n` grid:
+ * the share of samples outside the exact outline, and the widest stretch of
+ * a sampled row past it (px).
+ */
+function bareCanvas(limits: FlatLimits, inset: MapInset, t: View, n = 60): { share: number; widest: number } {
   const { size, bottom } = limits
   let out = 0
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      const px = ((i + 0.5) / n) * size.width
-      const py = ((j + 0.5) / n) * (size.height - bottom)
-      if (!inWorld(size, inset, t, px, py)) out++
+  let widest = 0
+  for (let j = 0; j < n; j++) {
+    const py = ((j + 0.5) / n) * (size.height - bottom)
+    let row = 0
+    for (let i = 0; i < n; i++) {
+      if (!inWorld(size, inset, t, ((i + 0.5) / n) * size.width, py)) row++
     }
+    out += row
+    // The outline is convex, so a row's bare canvas is at its ends: measure it there exactly.
+    if (row) widest = Math.max(widest, excess(size, inset, t, 0, py), excess(size, inset, t, size.width, py))
   }
-  return out / (n * n)
+  return { share: out / (n * n), widest }
 }
 
 /** Requested transforms across zooms and pans, including the extremes. */
@@ -251,13 +290,15 @@ describe('flatLimits', () => {
 })
 
 describe('clampView', () => {
-  it.each(CASES)('keeps every visible corner of the %s inside the outline', (_name, size, inset, covered) => {
+  it.each(CASES)('keeps every visible corner of the %s within the slack of the outline', (_name, size, inset, covered) => {
     const limits = flatLimits(size, inset, MAX, covered)
     for (const t of requests(limits)) {
       const v = clampView(t, limits)
       expect(v.k).toBeGreaterThanOrEqual(limits.minK)
       expect(v.k).toBeLessThanOrEqual(limits.maxK)
-      for (const [px, py] of corners(limits)) expect(inWorld(size, inset, v, px, py)).toBe(true)
+      for (const [px, py] of corners(limits)) expect(excess(size, inset, v, px, py)).toBeLessThanOrEqual(MAX_WEDGE)
+      // Zoomed right out there is no slack: the whole canvas is inside.
+      if (v.k === limits.minK) for (const [px, py] of corners(limits)) expect(inWorld(size, inset, v, px, py)).toBe(true)
     }
   })
 
@@ -269,15 +310,24 @@ describe('clampView', () => {
     }
   })
 
-  it.each(CASES)('shows no bare canvas at the extreme pans of the %s', (_name, size, inset, covered) => {
+  it.each(CASES)('shows at most a thin wedge of bare canvas at the extreme pans of the %s', (_name, size, inset, covered) => {
     const limits = flatLimits(size, inset, MAX, covered)
-    for (const k of [limits.minK, limits.minK * 1.5, limits.minK * 3]) {
+    expect(bareCanvas(limits, inset, coverView(limits)).share).toBe(0)
+    let most = 0
+    for (const k of [limits.minK, limits.minK * 1.2, limits.minK * 1.5, limits.minK * 3, 6, MAX]) {
       for (const x of [-1e5, 0, 1e5]) {
         for (const y of [-1e5, 0, 1e5]) {
-          expect(outsideShare(limits, inset, clampView({ k, x, y }, limits))).toBe(0)
+          const { share, widest } = bareCanvas(limits, inset, clampView({ k, x, y }, limits))
+          // Only sideways wedges, never wider than the slack's cap.
+          expect(widest).toBeLessThanOrEqual(MAX_WEDGE)
+          if (k <= limits.minK) expect(share).toBe(0)
+          most = Math.max(most, share)
         }
       }
     }
+    // The slack is used: a pan to an edge does show some canvas past the outline.
+    expect(most).toBeGreaterThan(0)
+    expect(most).toBeLessThan(PAN_SLACK.cap / size.width)
   })
 
   it.each(CASES)('leaves a view already inside the %s alone', (_name, size, inset, covered) => {
@@ -294,19 +344,27 @@ describe('clampView', () => {
     const limits = flatLimits(MOBILE, INSET, MAX, COVERED)
     expect(clampView({ k: 1, x: 0, y: 0 }, limits).k).toBeCloseTo(limits.minK)
     const dragged = clampView({ k: limits.minK * 2, x: 500, y: 500 }, limits)
-    expect(dragged.x).toBeLessThanOrEqual(-dragged.k * limits.bounds[0][0] + 1e-6)
-    expect(inWorld(MOBILE, INSET, dragged, 0, 0)).toBe(true)
+    expect(dragged.x).toBeLessThanOrEqual(-dragged.k * limits.bounds[0][0] + PAN_SLACK.side + 1e-6)
+    expect(excess(MOBILE, INSET, dragged, 0, 0)).toBeLessThanOrEqual(MAX_WEDGE)
   })
 
   it('pulls in a corner wedge the old bounding-box clamp allowed', () => {
-    // Panned to the far east at a modest zoom: the old box clamp left the top-right corner outside the curve.
+    // Panned to the far east at a modest zoom: the old box clamp left the top-right corner far outside the curve.
     const limits = flatLimits(MOBILE, INSET, MAX, COVERED)
     const k = limits.minK * 1.5
     const [[, y0], [x1]] = limits.bounds
     const boxEdge = { k, x: MOBILE.width - k * x1, y: -k * y0 }
-    expect(inWorld(MOBILE, INSET, boxEdge, MOBILE.width - 1, 1)).toBe(false)
+    expect(excess(MOBILE, INSET, boxEdge, MOBILE.width - 1, 1)).toBeGreaterThan(MAX_WEDGE)
     const v = clampView(boxEdge, limits)
-    expect(inWorld(MOBILE, INSET, v, MOBILE.width - 1, 1)).toBe(true)
+    expect(excess(MOBILE, INSET, v, MOBILE.width - 1, 1)).toBeLessThanOrEqual(MAX_WEDGE)
+  })
+
+  it('has no slack at the World view zoom, so zooming right out is wholly inside the outline', () => {
+    const limits = flatLimits(MOBILE, INSET, MAX, COVERED)
+    for (const x of [-1e5, 1e5]) {
+      const v = clampView({ k: limits.minK, x, y: 0 }, limits)
+      for (const [px, py] of corners(limits)) expect(inWorld(MOBILE, INSET, v, px, py)).toBe(true)
+    }
   })
 })
 
@@ -323,7 +381,7 @@ describe('framing with limits', () => {
     for (const box of boxes) {
       const fit = frameCountry(box, MOBILE, INSET, 6, 0, limits)
       expect(clampView(fit, limits)).toEqual(fit)
-      for (const [px, py] of corners(limits)) expect(inWorld(MOBILE, INSET, fit, px, py)).toBe(true)
+      for (const [px, py] of corners(limits)) expect(excess(MOBILE, INSET, fit, px, py)).toBeLessThanOrEqual(MAX_WEDGE)
       const marked = frameMarked([box], MOBILE, INSET, 6, 0, limits)
       expect(clampView(marked, limits)).toEqual(marked)
     }
@@ -343,7 +401,7 @@ describe('framing with limits', () => {
 })
 
 describe('rescaleView', () => {
-  it('keeps the relative zoom across a rotation, still inside the outline', () => {
+  it('keeps the relative zoom across a rotation, still within the slack of the outline', () => {
     const portrait = flatLimits(MOBILE, INSET, MAX, COVERED)
     const landscape = flatLimits({ width: 844, height: 390 }, NO_INSET, MAX)
     const cover = rescaleView(coverView(portrait), portrait, landscape)
@@ -353,8 +411,9 @@ describe('rescaleView', () => {
     // Panned to an edge before the rotation, too.
     const edge = rescaleView(clampView({ k: portrait.minK * 2, x: -1e5, y: 1e5 }, portrait), portrait, landscape)
     for (const v of [cover, zoomed, edge]) {
-      for (const [px, py] of corners(landscape)) expect(inWorld({ width: 844, height: 390 }, NO_INSET, v, px, py)).toBe(true)
+      for (const [px, py] of corners(landscape)) expect(excess({ width: 844, height: 390 }, NO_INSET, v, px, py)).toBeLessThanOrEqual(MAX_WEDGE)
     }
+    for (const [px, py] of corners(landscape)) expect(inWorld({ width: 844, height: 390 }, NO_INSET, cover, px, py)).toBe(true)
   })
 
   it('is the identity when the size is unchanged', () => {
@@ -411,22 +470,43 @@ describe('the opaque bottom inset', () => {
     expect(y).toBeLessThan(MOBILE.height - SHEET_PEEK)
   })
 
-  it('zooms in to get New Zealand on screen, though the outline pushes it to the right edge', () => {
-    // At 172°E the outline slants inwards to the south, so NZ cannot be centred; the fit zooms in so its
-    // centre lands on screen above the sheet instead of past the canvas edge.
-    const { x, y } = framed(172, -41, 12, 13)
-    expect(x).toBeGreaterThan(MOBILE.width / 2)
-    expect(x).toBeLessThan(MOBILE.width)
-    expect(y).toBeGreaterThan(INSET.top)
-    expect(y).toBeLessThan(MOBILE.height - SHEET_PEEK)
-  })
-
   it('frames Iceland and Norway no higher than the bounding-box clamp did', () => {
     // Their centres sit just under the search band by design (the world's top edge stays at the canvas top).
     for (const [lon, lat, dLon, dLat] of [[-19, 65, 12, 5], [15, 65, 26, 13]]) {
       const { y } = framed(lon, lat, dLon, dLat)
       expect(y).toBeGreaterThan(0)
       expect(y).toBeLessThan(MOBILE.height - SHEET_PEEK)
+    }
+  })
+})
+
+describe('focusing the Pacific edge countries (the pan slack)', () => {
+  const index = buildCountryIndex(decodeWorld(JSON.parse(
+    readFileSync(new URL('../../data/world-detail.topo.json', import.meta.url), 'utf8'),
+  )))
+  const VIEWPORTS = [
+    ['390x844', MOBILE, INSET, COVERED, SHEET_PEEK],
+    ['375x667', { width: 375, height: 667 }, INSET, COVERED, SHEET_PEEK],
+    ['1280x720', DESKTOP, NO_INSET, 0, 0],
+  ] as const
+
+  // As useFlatMap focuses: the mainland's bounds, FOCUS_MAX_ZOOM 6, at least 30 degrees across.
+  it.each(VIEWPORTS)('centres them in the clear band on %s, at most 6x', (_name, size, inset, covered, sheet) => {
+    const p = flatProjection(size, inset)
+    const limits = flatLimits(size, inset, MAX, covered)
+    const minWidth = spanWidth(limits.bounds[1][0] - limits.bounds[0][0], 30)
+    for (const name of ['New Zealand', 'Fiji', 'Tonga', 'Samoa', 'Kiribati', 'Vanuatu']) {
+      const country = index.find(c => c.identity.name === name)
+      expect(country, name).toBeDefined()
+      if (!country) continue
+      const [[x0, y0], [x1, y1]] = geoPath(p).bounds(mainland(country))
+      const fit = frameCountry([[x0, y0], [x1, y1]], size, inset, 6, minWidth, limits)
+      const [x, y] = [fit.x + fit.k * (x0 + x1) / 2, fit.y + fit.k * (y0 + y1) / 2]
+      expect(fit.k, name).toBeLessThanOrEqual(6)
+      expect(x, name).toBeGreaterThanOrEqual(40)
+      expect(x, name).toBeLessThanOrEqual(size.width - 40)
+      expect(y, name).toBeGreaterThanOrEqual(inset.top)
+      expect(y, name).toBeLessThanOrEqual(size.height - sheet)
     }
   })
 })
