@@ -1,5 +1,5 @@
 import type { Feature, GeoJsonProperties, Geometry } from 'geojson'
-import type { CountryIdentity } from './visitedCountries'
+import type { CountryIdentity } from '../types'
 
 /**
  * Country identity read from a GeoJSON feature.

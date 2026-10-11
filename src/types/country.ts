@@ -8,6 +8,12 @@ export interface Country {
   code: string
 }
 
+/** The composite `(code, name)` that identifies a country; codes can collide in the GeoJSON data. */
+export interface CountryIdentity {
+  code: string
+  name: string
+}
+
 /** A visited country - stores both code and name since codes can be duplicated in GeoJSON. */
 export interface VisitedCountry {
   code: string
@@ -42,3 +48,6 @@ export interface MapFilter {
   visited: boolean
   bucketlist: boolean
 }
+
+/** What marking a country sends to the API. */
+export type AddCountryInput = Pick<VisitedCountry, 'code' | 'name' | 'status' | 'notes'>

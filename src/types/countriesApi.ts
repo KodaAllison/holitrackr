@@ -1,4 +1,4 @@
-import type { CountryVisit, VisitedCountry } from './country'
+import type { CountryIdentity, CountryVisit, VisitedCountry } from './country'
 
 export interface StoredCountryRow {
   country_code: string
@@ -10,16 +10,6 @@ export interface StoredCountryRow {
   rating: number | null
   tags: string | null
 }
-
-export interface CountryIdentity {
-  code: string
-  name: string
-}
-
-export type AddCountryInput = Pick<
-  VisitedCountry,
-  'code' | 'name' | 'status' | 'notes'
->
 
 export interface CreateCountryInput extends CountryIdentity {
   status: VisitedCountry['status']

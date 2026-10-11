@@ -62,3 +62,14 @@ describe('country payload parsing', () => {
     })
   })
 })
+
+describe('stored ratings on the wire', () => {
+  it('serialises a legacy out-of-range rating as no rating', () => {
+    const row = {
+      country_code: 'ESP', country_name: 'Spain', status: 'visited',
+      notes: null, place: null, visit_date: null, tags: null,
+    }
+    expect(serializeStoredCountry({ ...row, rating: 7 }).rating).toBeUndefined()
+    expect(serializeStoredCountry({ ...row, rating: 3 }).rating).toBe(3)
+  })
+})

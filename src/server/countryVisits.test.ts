@@ -43,12 +43,18 @@ const visitRow = (id: number, date: string, name = 'Spain', code = 'ESP'): Count
 describe('visit payload parsing', () => {
   it('parses a new visit, normalising its journal like the country PATCH', () => {
     expect(parseCreateVisitInput({
-      code: 'ESP', name: 'Spain', visitedAt: '2019-03', place: '  Seville ', rating: 4.6,
+      code: 'ESP', name: 'Spain', visitedAt: '2019-03', place: '  Seville ', rating: 4,
       notes: 'Again', tags: ['Food', 3, 'Beach'],
     })).toEqual({
-      code: 'ESP', name: 'Spain', visitDate: '2019-03-01', place: 'Seville', rating: 5,
+      code: 'ESP', name: 'Spain', visitDate: '2019-03-01', place: 'Seville', rating: 4,
       notes: 'Again', tags: '["Food","Beach"]',
     })
+  })
+
+  it('drops a rating that is not a whole number from 1 to 5', () => {
+    const rating = (value: unknown) =>
+      parseCreateVisitInput({ code: 'ESP', name: 'Spain', visitedAt: '2019-03', rating: value })?.rating
+    expect([4.6, 0, 6, 'x', NaN].map(rating)).toEqual([null, null, null, null, null])
   })
 
   it('stores optional journal fields as null', () => {

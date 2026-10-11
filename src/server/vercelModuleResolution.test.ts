@@ -10,6 +10,7 @@ const productionModules = [
   'api/countries.ts',
   'api/countries/visits.ts',
   'api/public/stats.ts',
+  'src/lib/countryWire.ts',
   'src/server/countriesHandler.ts',
   'src/server/countryPayloads.ts',
   'src/server/countryVisits.ts',
