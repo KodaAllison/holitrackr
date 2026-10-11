@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { geoPath } from 'd3-geo'
-import { flatFit, flatProjection, frameMarked, NO_INSET, spanWidth, unionBounds, widenBounds } from './views'
+import { flatFit, flatProjection, frameCountry, frameMarked, NO_INSET, spanWidth, unionBounds, widenBounds } from './views'
 
 const MOBILE = { width: 390, height: 844 }
 const INSET = { top: 116, right: 0, bottom: 264, left: 0 }
@@ -106,5 +106,47 @@ describe('frameMarked', () => {
     expect(fit.k).toBeLessThan(6)
     // Without the minimum it would hit the zoom cap.
     expect(frameMarked([boxOf(6, 49.4, 6.5, 50.2)], MOBILE, INSET, 12).k).toBe(12)
+  })
+})
+
+describe('frameCountry', () => {
+  const world = flatProjection(MOBILE, INSET)
+  const [[wx0], [wx1]] = geoPath(world).bounds({ type: 'Sphere' })
+  const minWidth = spanWidth(wx1 - wx0, 30)
+  const boxOf = (lon0: number, lat0: number, lon1: number, lat1: number): [[number, number], [number, number]] =>
+    geoPath(world).bounds({ type: 'Polygon', coordinates: [[[lon0, lat0], [lon0, lat1], [lon1, lat1], [lon1, lat0], [lon0, lat0]]] })
+
+  it('centres the country in the clear band between the search and the sheet', () => {
+    const box = boxOf(-5, 42, 8, 51)
+    const fit = frameCountry(box, MOBILE, INSET, 6, minWidth)
+    const [[x0, y0], [x1, y1]] = box
+    expect(fit.x + fit.k * (x0 + x1) / 2).toBeCloseTo(195)
+    expect(fit.y + fit.k * (y0 + y1) / 2).toBeCloseTo((116 + 580) / 2)
+  })
+
+  it('keeps the whole country inside the clear band', () => {
+    const [[x0, y0], [x1, y1]] = boxOf(-125, 25, -67, 49)
+    const fit = frameCountry([[x0, y0], [x1, y1]], MOBILE, INSET, 6, minWidth)
+    expect(fit.x + fit.k * x0).toBeGreaterThanOrEqual(0)
+    expect(fit.x + fit.k * x1).toBeLessThanOrEqual(390)
+    expect(fit.y + fit.k * y0).toBeGreaterThanOrEqual(INSET.top)
+    expect(fit.y + fit.k * y1).toBeLessThanOrEqual(844 - INSET.bottom)
+  })
+
+  it('leaves room around a country rather than filling the view', () => {
+    const fit = frameCountry(boxOf(-125, 25, -67, 49), MOBILE, INSET, 12, minWidth)
+    const [[x0], [x1]] = boxOf(-125, 25, -67, 49)
+    expect(fit.k * (x1 - x0)).toBeLessThan(390 * 0.75)
+  })
+
+  it('shows a small country with its neighbours, within the zoom cap', () => {
+    // Luxembourg.
+    const fit = frameCountry(boxOf(6, 49.4, 6.5, 50.2), MOBILE, INSET, 12, minWidth)
+    expect(390 / fit.k).toBeGreaterThanOrEqual(minWidth)
+    expect(frameCountry(boxOf(6, 49.4, 6.5, 50.2), MOBILE, INSET, 4, minWidth).k).toBe(4)
+  })
+
+  it('stays at the world view for a country as wide as the map', () => {
+    expect(frameCountry(boxOf(-179, -50, 179, 70), MOBILE, INSET, 6, minWidth).k).toBe(1)
   })
 })
