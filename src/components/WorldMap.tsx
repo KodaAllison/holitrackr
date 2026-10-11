@@ -4,7 +4,7 @@ import { countryKey, type CountryIdentity } from '../lib/visitedCountries'
 import type { IndexedCountry } from '../lib/mapEngine/countryIndex'
 import { useWorldCountries } from '../lib/mapEngine/useWorldCountries'
 import type { ViewTransform } from '../lib/mapEngine/renderer'
-import type { MapViewOptions } from '../lib/mapEngine/useFlatMap'
+import { useReducedMotion, type MapViewOptions } from '../lib/mapEngine/mapView'
 import { DEFAULT_GLOBE, NO_INSET, type GlobeView, type MapInset } from '../lib/mapEngine/views'
 import { SHEET_PEEK } from '../lib/mobileSheet'
 import { introPlayed, markIntroPlayed, readMapView, writeMapView } from '../lib/mapViewPreference'
@@ -46,7 +46,6 @@ interface WorldMapProps {
 
 /** Desktop gets the globe (or flat, by choice); smaller screens are always flat. */
 const DESKTOP_QUERY = '(min-width: 1024px)'
-const REDUCED_QUERY = '(prefers-reduced-motion: reduce)'
 const SURFACE = 'relative w-full h-full select-none'
 const IDENTITY: ViewTransform = { k: 1, x: 0, y: 0 }
 /** Mobile: fit the world to the part of the map between the floating search/chip and the sheet's peek. */
@@ -63,7 +62,7 @@ export default function WorldMap(props: WorldMapProps) {
   const { loading, welcome, quiet, focus } = props
   const filter = mapFilter ?? SHOW_ALL
   const desktop = useMediaQuery(DESKTOP_QUERY)
-  const reducedMotion = useMediaQuery(REDUCED_QUERY)
+  const reducedMotion = useReducedMotion()
   const { countries, motionCountries, failed } = useWorldCountries(onCountriesLoaded)
   const [hovered, setHovered] = useState<Pointed | null>(null)
   const [interacted, setInteracted] = useState(false)
