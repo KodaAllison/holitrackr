@@ -1,4 +1,5 @@
-import { countryKey, type CountryIdentity } from '../visitedCountries'
+import { countryKey } from '../visitedCountries'
+import type { CountryIdentity } from '../../types'
 import { clusterAt, type Cluster } from './clusters'
 import { CLUSTER_RADIUS } from './renderer'
 

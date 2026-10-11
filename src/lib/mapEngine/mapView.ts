@@ -1,5 +1,4 @@
-import type { VisitedCountry } from '../../types'
-import type { CountryIdentity } from '../visitedCountries'
+import type { CountryIdentity, VisitedCountry } from '../../types'
 import { useMediaQuery } from '../useMediaQuery'
 import type { IndexedCountry } from './countryIndex'
 
