@@ -1,5 +1,6 @@
 import type { VisitedCountry } from '../types'
 import { getContinent } from './continents'
+import { isRating } from './countryWire'
 import { formatVisitMonth } from './visitDate'
 
 /** How the sidebar list is ordered. */
@@ -65,7 +66,7 @@ export function rowSubline(country: VisitedCountry): RowSubline {
   const when = formatVisitMonth(country.visitedAt)
   if (country.status === 'bucketlist') return { text: when ? `Hoping to go · ${when}` : 'Add when you hope to go' }
   if (!when) return { text: 'Add a visit date' }
-  const rating = country.rating && country.rating >= 1 && country.rating <= 5 ? '★'.repeat(country.rating) : undefined
+  const rating = isRating(country.rating) ? '★'.repeat(country.rating) : undefined
   const tags = country.tags && country.tags.length > 0 ? country.tags.join(', ') : undefined
   return { text: when, stars: rating, tags }
 }

@@ -1,4 +1,4 @@
-import type { VisitedCountry } from '../types'
+import type { CountryIdentity, VisitedCountry } from '../types'
 
 /**
  * Country identity and status lookups over a `VisitedCountry[]`.
@@ -8,12 +8,6 @@ import type { VisitedCountry } from '../types'
  * These pure helpers are the single source of truth for that rule; every call
  * site should route through them rather than re-typing the comparison.
  */
-
-/** The minimal identity shape shared by `Country` and `VisitedCountry`. */
-export interface CountryIdentity {
-  code: string
-  name: string
-}
 
 type Status = VisitedCountry['status']
 

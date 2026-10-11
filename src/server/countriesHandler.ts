@@ -1,6 +1,6 @@
 import type { VisitedCountryDto } from '../types/countriesApi.js'
+import { parseCountryIdentity } from '../lib/countryWire.js'
 import {
-  parseCountryIdentity,
   parseCreateCountryInput,
   parseUpdateCountryInput,
 } from './countryPayloads.js'

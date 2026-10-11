@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { geoOrthographic, type GeoProjection, type GeoStream } from 'd3-geo'
-import type { CountryIdentity } from '../visitedCountries'
+import type { CountryIdentity } from '../../types'
 import { countryKey } from '../visitedCountries'
 import { clusterAt, type Cluster } from './clusters'
 import { countryAt, type IndexedCountry } from './countryIndex'

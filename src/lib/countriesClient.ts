@@ -1,9 +1,5 @@
-import type {
-  AddCountryInput,
-  CountryIdentity,
-  VisitedCountryDto,
-} from '../types/countriesApi'
-import type { CountryVisit, VisitedCountry } from '../types/country'
+import type { AddCountryInput, CountryIdentity, CountryVisit, VisitedCountry } from '../types'
+import { parseCountryDto, parseVisitDto } from './countryWire'
 import { sameCountry } from './visitedCountries'
 import { isVisitMonth } from './visitDate'
 import { sortVisits, toVisit } from './countryVisits'
@@ -57,53 +53,6 @@ function cloneCountry(country: VisitedCountry): VisitedCountry {
   }
 }
 
-function isOptionalString(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === 'string'
-}
-
-function isOptionalRating(value: unknown): value is number | undefined {
-  return value === undefined ||
-    (typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 5)
-}
-
-function isOptionalTags(value: unknown): value is string[] | undefined {
-  return value === undefined ||
-    (Array.isArray(value) && value.every((tag) => typeof tag === 'string'))
-}
-
-function parseVisitDto(value: unknown): CountryVisit | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return undefined
-  }
-  const visit = value as Record<string, unknown>
-  if (
-    typeof visit.id !== 'number' ||
-    !Number.isInteger(visit.id) ||
-    !isVisitMonth(visit.visitedAt) ||
-    !isOptionalString(visit.place) ||
-    !isOptionalString(visit.notes) ||
-    !isOptionalRating(visit.rating) ||
-    !isOptionalTags(visit.tags)
-  ) {
-    return undefined
-  }
-  return {
-    id: visit.id,
-    visitedAt: visit.visitedAt,
-    place: visit.place,
-    rating: visit.rating,
-    notes: visit.notes,
-    tags: visit.tags,
-  }
-}
-
-function parseVisitsDto(value: unknown): CountryVisit[] | undefined | null {
-  if (value === undefined) return undefined
-  if (!Array.isArray(value)) return null
-  const visits = value.map(parseVisitDto)
-  return visits.every((visit): visit is CountryVisit => visit !== undefined) ? visits : null
-}
-
 /** The journal as the API takes it: blanks become null. */
 function journalBody(values: CountryJournalUpdates) {
   return {
@@ -112,46 +61,6 @@ function journalBody(values: CountryJournalUpdates) {
     visitedAt: values.visitedAt || null,
     rating: values.rating ?? null,
     tags: values.tags,
-  }
-}
-
-function parseCountryDto(value: unknown): VisitedCountryDto | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return undefined
-  }
-
-  const country = value as Record<string, unknown>
-  const visits = parseVisitsDto(country.visits)
-  if (
-    visits === null ||
-    typeof country.code !== 'string' ||
-    typeof country.name !== 'string' ||
-    (country.status !== 'visited' && country.status !== 'bucketlist') ||
-    !isOptionalString(country.notes) ||
-    !isOptionalString(country.place) ||
-    !isOptionalString(country.visitedAt) ||
-    (country.rating !== undefined &&
-      (typeof country.rating !== 'number' ||
-        !Number.isFinite(country.rating) ||
-        country.rating < 1 ||
-        country.rating > 5)) ||
-    (country.tags !== undefined &&
-      (!Array.isArray(country.tags) ||
-        !country.tags.every((tag) => typeof tag === 'string')))
-  ) {
-    return undefined
-  }
-
-  return {
-    code: country.code,
-    name: country.name,
-    status: country.status,
-    notes: country.notes,
-    place: country.place,
-    visitedAt: country.visitedAt,
-    rating: country.rating,
-    tags: country.tags,
-    ...(visits ? { visits } : {}),
   }
 }
 

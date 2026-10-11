@@ -1,6 +1,6 @@
-import type { CountryVisit, VisitedCountry } from '../types'
+import type { CountryIdentity, CountryVisit, VisitedCountry } from '../types'
 import type { JournalValues } from './journal'
-import { sameCountry, type CountryIdentity } from './visitedCountries'
+import { sameCountry } from './visitedCountries'
 
 /**
  * Extra visits (FEATURES.md #8) as pure list updates, for the optimistic
