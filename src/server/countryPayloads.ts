@@ -5,7 +5,7 @@ import type {
   VisitedCountryDto,
 } from '../types/countriesApi.js'
 import type { VisitedCountry } from '../types/country.js'
-import { fromStoredVisitDate, toStoredVisitDate } from '../lib/visitDate.js'
+import { fromStoredVisitDate, isVisitMonth, toStoredVisitDate } from '../lib/visitDate.js'
 import {
   asRecord,
   isRating,
@@ -73,9 +73,7 @@ export function parseStoredTags(value: string | null): string[] | undefined {
 
   try {
     const parsed: unknown = JSON.parse(value)
-    return Array.isArray(parsed)
-      ? parsed.filter((tag): tag is string => typeof tag === 'string')
-      : undefined
+    return parseTagList(parsed) ?? undefined
   } catch {
     return undefined
   }
@@ -90,6 +88,12 @@ export function storedRating(rating: number | null): number | undefined {
   return isRating(rating) ? rating : undefined
 }
 
+/** A stored visit date on the wire (`YYYY-MM`), or undefined if it is not a valid month. */
+export function storedVisitMonth(stored: string | null): string | undefined {
+  const month = fromStoredVisitDate(stored)
+  return isVisitMonth(month) ? month : undefined
+}
+
 export function serializeStoredCountry(
   row: StoredCountryRow
 ): VisitedCountryDto {
@@ -99,7 +103,7 @@ export function serializeStoredCountry(
     status: parseStoredStatus(row.status),
     notes: row.notes ?? undefined,
     place: row.place ?? undefined,
-    visitedAt: fromStoredVisitDate(row.visit_date),
+    visitedAt: storedVisitMonth(row.visit_date),
     rating: storedRating(row.rating),
     tags: parseStoredTags(row.tags),
   }

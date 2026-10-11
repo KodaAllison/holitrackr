@@ -73,3 +73,18 @@ describe('stored ratings on the wire', () => {
     expect(serializeStoredCountry({ ...row, rating: 3 }).rating).toBe(3)
   })
 })
+
+describe('stored visit dates on the wire', () => {
+  it.each(['2015-07-01', '2015-07'])('serialises %s as YYYY-MM', (stored) => {
+    const row = { country_code: 'ESP', country_name: 'Spain', status: 'visited',
+      notes: null, place: null, visit_date: stored, rating: null, tags: null }
+    expect(serializeStoredCountry(row).visitedAt).toBe('2015-07')
+  })
+
+  it('serialises a non-YYYY-MM stored value as no date', () => {
+    const row = { country_code: 'ESP', country_name: 'Spain', status: 'visited',
+      notes: null, place: null, visit_date: 'garbage', rating: null, tags: null }
+    expect(serializeStoredCountry(row).visitedAt).toBeUndefined()
+    expect(serializeStoredCountry({ ...row, visit_date: '2015-13-01' }).visitedAt).toBeUndefined()
+  })
+})

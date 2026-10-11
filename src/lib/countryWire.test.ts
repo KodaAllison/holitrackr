@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { serializeStoredCountry } from '../server/countryPayloads'
+import { serializeVisitRow } from '../server/countryVisits'
 import {
   isCountryIdentity,
   isRating,
@@ -104,5 +106,41 @@ describe('parseCountryDto', () => {
     [[]],
   ])('rejects %j', (value) => {
     expect(parseCountryDto(value)).toBeUndefined()
+  })
+})
+
+describe('server output round-trips through the client parser', () => {
+  const wire = (value: unknown): unknown => JSON.parse(JSON.stringify(value))
+  const tagCases = [null, '', '[]', 'not json', '[1,"a"]']
+  const ratingCases = [null, 7, 0]
+
+  it.each(tagCases)('country with stored tags %j', (tags) => {
+    for (const rating of ratingCases) {
+      for (const status of ['visited', 'bucketlist', 'lived']) {
+        const row = {
+          country_code: 'ESP', country_name: 'Spain', status, notes: null, place: null,
+          visit_date: '2015-07-01', rating, tags,
+        }
+        expect(parseCountryDto(wire(serializeStoredCountry(row)))).toBeDefined()
+      }
+    }
+  })
+
+  it.each(tagCases)('visit with stored tags %j', (tags) => {
+    for (const rating of ratingCases) {
+      const row = {
+        id: 3, country_code: 'ESP', country_name: 'Spain', visit_date: '2015-07-01',
+        place: null, rating, notes: null, tags,
+      }
+      expect(parseVisitDto(wire(serializeVisitRow(row)))).toBeDefined()
+    }
+  })
+
+  it('country with no stored date', () => {
+    const row = {
+      country_code: 'ESP', country_name: 'Spain', status: 'visited', notes: null, place: null,
+      visit_date: null, rating: null, tags: null,
+    }
+    expect(parseCountryDto(wire(serializeStoredCountry(row)))).toBeDefined()
   })
 })
