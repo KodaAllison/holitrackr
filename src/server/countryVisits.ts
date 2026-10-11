@@ -1,6 +1,5 @@
 import type { QueryResultRow } from 'pg'
 import type {
-  CountryIdentity,
   CountryVisitDto,
   CountryVisitRow,
   CreateVisitInput,
@@ -9,12 +8,12 @@ import type {
   VisitedCountryDto,
 } from '../types/countriesApi.js'
 import { fromStoredVisitDate, toStoredVisitDate } from '../lib/visitDate.js'
+import type { CountryIdentity } from '../types/country.js'
+import { asRecord, parseCountryIdentity, parseRating } from '../lib/countryWire.js'
 import {
-  asRecord,
-  parseCountryIdentity,
   parsePlace,
-  parseRating,
   parseStoredTags,
+  storedRating,
   parseTags,
   serializeStoredCountry,
 } from './countryPayloads.js'
@@ -122,7 +121,7 @@ export function serializeVisitRow(row: CountryVisitRow): CountryVisitDto {
     id: row.id,
     visitedAt: fromStoredVisitDate(row.visit_date) ?? '',
     place: row.place ?? undefined,
-    rating: row.rating ?? undefined,
+    rating: storedRating(row.rating),
     notes: row.notes ?? undefined,
     tags: parseStoredTags(row.tags),
   }

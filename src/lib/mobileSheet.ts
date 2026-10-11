@@ -1,5 +1,6 @@
 import type { VisitedCountry } from '../types'
 import { getContinent } from './continents'
+import { isRating } from './countryWire'
 import { formatVisitMonth, monthName, parseVisitMonth } from './visitDate'
 
 /**
@@ -82,7 +83,7 @@ export function countrySummary(country: VisitedCountry): CountrySummary {
   if (country.status === 'bucketlist') {
     return { text: when ? `Hoping to go · ${when}` : 'On your bucket list', tags }
   }
-  const stars = country.rating && country.rating >= 1 && country.rating <= 5 ? '★'.repeat(country.rating) : undefined
+  const stars = isRating(country.rating) ? '★'.repeat(country.rating) : undefined
   return { text: when ?? 'Add a visit date', stars, tags }
 }
 

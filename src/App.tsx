@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState, useEffect } from 'react'
-import type { Country, MapFilter, VisitedCountry } from './types'
+import type { Country, CountryIdentity, MapFilter, VisitedCountry } from './types'
 import WorldMap from './components/WorldMap'
 import AppBar from './components/AppBar'
 import type { AppView } from './components/ViewSwitch'
@@ -29,7 +29,7 @@ import {
   type CountriesClient,
   type CountryJournalUpdates,
 } from './lib/countriesClient'
-import { sameCountry, findCountry, statusOf, withStatusAction, type CountryIdentity, type StatusAction } from './lib/visitedCountries'
+import { sameCountry, findCountry, statusOf, withStatusAction, type StatusAction } from './lib/visitedCountries'
 
 const STORAGE_KEY_PREFIX = 'myatlas-visited-countries'
 const LEGACY_STORAGE_KEY_PREFIX = 'holitrackr-visited-countries'

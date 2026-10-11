@@ -1,6 +1,6 @@
 import { geoArea, geoBounds, geoCentroid, geoContains, geoDistance } from 'd3-geo'
 import type { Feature, GeoJsonProperties, Geometry, Polygon } from 'geojson'
-import type { CountryIdentity } from '../visitedCountries'
+import type { CountryIdentity } from '../../types'
 import type { WorldFeatures } from '../worldAtlas'
 import { featureIdentity } from '../featureIdentity'
 

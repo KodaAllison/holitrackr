@@ -4,16 +4,9 @@ import type { QueryResultRow } from 'pg';
 import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
 import { createServer as createViteServer } from 'vite';
 import { auth, authConfig } from './src/lib/auth';
+import { handleCountriesRequest } from './src/server/countriesHandler';
 import {
-  parseCountryIdentity,
-  parseCreateCountryInput,
-  parseUpdateCountryInput,
-} from './src/server/countryPayloads';
-import {
-  deleteCountry,
   handleCountryVisitsRequest,
-  listCountries,
-  resetCountries,
   type CountriesDatabase,
 } from './src/server/countryVisits';
 import { runDatabaseMigrations } from './src/server/databaseMigrations';
@@ -78,15 +71,29 @@ async function createServer() {
   // malformed request bodies cannot bypass the public handler's CORS and cache headers.
   app.use(express.json());
 
-  app.get('/api/countries', async (req, res) => {
-    const session = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-    });
+  // The user's countries; logic shared with api/countries.ts.
+  app.all('/api/countries', async (req, res) => {
+    try {
+      const session = await auth.api.getSession({
+        headers: fromNodeHeaders(req.headers),
+      });
 
-    const userId = session?.user?.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const response = await handleCountriesRequest({
+        method: req.method,
+        userId: session?.user?.id,
+        body: req.body,
+        reset: req.query.reset === 'true',
+        database,
+      });
 
-    return res.json(await listCountries(database, userId));
+      if (response.body) return res.status(response.status).json(response.body);
+      return res.status(response.status).end();
+    } catch (err) {
+      console.error('countries api error:', err);
+      if (!res.headersSent) {
+        return res.status(500).json({ error: 'Failed to process request' });
+      }
+    }
   });
 
   // A country's extra visits (FEATURES.md #8); logic shared with api/countries/visits.ts.
@@ -104,79 +111,6 @@ async function createServer() {
 
     if (response.body) return res.status(response.status).json(response.body);
     return res.status(response.status).end();
-  });
-
-  app.post('/api/countries', async (req, res) => {
-    const session = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-    });
-
-    const userId = session?.user?.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    const parsed = parseCreateCountryInput(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error });
-    }
-    const { code, name, status, notes } = parsed.value;
-
-    await authConfig.database.query(
-      `INSERT INTO visited_countries (user_id, country_code, country_name, status, notes)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (user_id, country_code, country_name) DO UPDATE
-         SET status = EXCLUDED.status,
-             notes = COALESCE(EXCLUDED.notes, visited_countries.notes)`,
-      [userId, code, name, status, notes]
-    );
-
-    return res.status(204).end();
-  });
-
-  app.patch('/api/countries', async (req, res) => {
-    const session = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-    });
-
-    const userId = session?.user?.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    const input = parseUpdateCountryInput(req.body);
-    if (!input) {
-      return res.status(400).json({ error: 'Invalid payload' });
-    }
-
-    await authConfig.database.query(
-      `UPDATE visited_countries SET notes = $1, place = $2, visit_date = $3, rating = $4, tags = $5
-       WHERE user_id = $6 AND country_code = $7 AND country_name = $8`,
-      [input.notes, input.place, input.visitDate, input.rating, input.tags, userId, input.code, input.name]
-    );
-
-    return res.status(204).end();
-  });
-
-  app.delete('/api/countries', async (req, res) => {
-    const session = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-    });
-
-    const userId = session?.user?.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    const reset = req.query.reset;
-
-    if (reset === 'true') {
-      await resetCountries(database, userId);
-      return res.status(204).end();
-    }
-
-    const identity = parseCountryIdentity(req.body);
-    if (!identity) {
-      return res.status(400).json({ error: 'Invalid payload' });
-    }
-
-    await deleteCountry(database, userId, identity);
-
-    return res.status(204).end();
   });
 
   app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {

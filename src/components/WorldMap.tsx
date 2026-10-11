@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { Country, MapFilter, VisitedCountry } from '../types'
-import { countryKey, type CountryIdentity } from '../lib/visitedCountries'
+import type { Country, CountryIdentity, MapFilter, VisitedCountry } from '../types'
+import { countryKey } from '../lib/visitedCountries'
 import type { IndexedCountry } from '../lib/mapEngine/countryIndex'
 import { useWorldCountries } from '../lib/mapEngine/useWorldCountries'
 import type { ViewTransform } from '../lib/mapEngine/renderer'
