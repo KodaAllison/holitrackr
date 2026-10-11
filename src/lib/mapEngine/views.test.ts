@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { geoPath } from 'd3-geo'
 import {
-  clampView, coverView, flatFit, flatFrame, flatLimits, flatProjection, frameCountry, frameMarked, NO_INSET, rescaleView,
+  type FlatLimits, clampView, coverView, flatFit, flatFrame, flatLimits, flatProjection, frameCountry, frameMarked, NO_INSET, rescaleView,
   spanWidth, unionBounds, widenBounds,
 } from './views'
 
@@ -164,23 +164,22 @@ const CASES = [
   ['small viewport', SMALL, NO_INSET],
 ] as const
 
-type Box = [[number, number], [number, number]]
-
-/** True when the world's bounding box, drawn under `t`, covers the whole canvas. */
-function covers(size: { width: number; height: number }, bounds: Box, t: { k: number; x: number; y: number }) {
-  const [[x0, y0], [x1, y1]] = bounds
+/** True when the world's bounding box, drawn under `t`, covers the canvas that isn't under the opaque bottom inset. */
+function covers({ size, bounds: [[x0, y0], [x1, y1]], bottom }: FlatLimits, t: { k: number; x: number; y: number }) {
   const eps = 1e-6
-  return t.k * x0 + t.x <= eps && t.k * x1 + t.x >= size.width - eps && t.k * y0 + t.y <= eps && t.k * y1 + t.y >= size.height - eps
+  return t.k * x0 + t.x <= eps && t.k * x1 + t.x >= size.width - eps
+    && t.k * y0 + t.y <= eps && t.k * y1 + t.y >= size.height - bottom - eps
 }
 
 describe('flatLimits', () => {
   it.each(CASES)('cover scale makes the world fill the %s', (_name, size, inset) => {
-    const { bounds, minK } = flatLimits(size, inset, MAX)
+    const { bounds, minK, bottom } = flatLimits(size, inset, MAX)
     const [[x0, y0], [x1, y1]] = bounds
+    const visible = size.height - bottom
     expect(minK * (x1 - x0)).toBeGreaterThanOrEqual(size.width - 1e-6)
-    expect(minK * (y1 - y0)).toBeGreaterThanOrEqual(size.height - 1e-6)
+    expect(minK * (y1 - y0)).toBeGreaterThanOrEqual(visible - 1e-6)
     // The smallest such scale: one axis fits exactly.
-    const exact = Math.min(minK * (x1 - x0) - size.width, minK * (y1 - y0) - size.height)
+    const exact = Math.min(minK * (x1 - x0) - size.width, minK * (y1 - y0) - visible)
     expect(exact).toBeCloseTo(0, 6)
   })
 
@@ -199,7 +198,7 @@ describe('clampView and coverView', () => {
     const limits = flatLimits(size, inset, MAX)
     const view = coverView(limits)
     expect(view.k).toBeCloseTo(limits.minK)
-    expect(covers(size, limits.bounds, view)).toBe(true)
+    expect(covers(limits, view)).toBe(true)
     expect(clampView(view, limits)).toEqual(view)
   })
 
@@ -210,7 +209,7 @@ describe('clampView and coverView', () => {
         const v = clampView({ k, x, y }, limits)
         expect(v.k).toBeGreaterThanOrEqual(limits.minK)
         expect(v.k).toBeLessThanOrEqual(limits.maxK)
-        expect(covers(size, limits.bounds, v)).toBe(true)
+        expect(covers(limits, v)).toBe(true)
       }
     }
   })
@@ -230,7 +229,7 @@ describe('framing with limits', () => {
     // A country at the world's top-left corner.
     const fit = frameCountry([[x0, y0], [x0 + 20, y0 + 10]], MOBILE, INSET, 6, 0, limits)
     expect(clampView(fit, limits)).toEqual(fit)
-    expect(covers(MOBILE, limits.bounds, fit)).toBe(true)
+    expect(covers(limits, fit)).toBe(true)
   })
 
   it('no marked countries is the cover view', () => {
@@ -250,10 +249,10 @@ describe('rescaleView', () => {
     const landscape = flatLimits({ width: 844, height: 390 }, NO_INSET, MAX)
     const cover = rescaleView(coverView(portrait), portrait, landscape)
     expect(cover.k).toBeCloseTo(landscape.minK)
-    expect(covers(landscape.size, landscape.bounds, cover)).toBe(true)
+    expect(covers(landscape, cover)).toBe(true)
     const zoomed = rescaleView({ ...coverView(portrait), k: portrait.minK * 2 }, portrait, landscape)
     expect(zoomed.k).toBeCloseTo(landscape.minK * 2)
-    expect(covers(landscape.size, landscape.bounds, zoomed)).toBe(true)
+    expect(covers(landscape, zoomed)).toBe(true)
   })
 
   it('is the identity when the size is unchanged', () => {
@@ -278,5 +277,37 @@ describe('flatFrame (the morph) agrees with the flat map', () => {
     expect(x1).toBeGreaterThanOrEqual(DESKTOP.width - 1e-6)
     expect(y0).toBeLessThanOrEqual(1e-6)
     expect(y1).toBeGreaterThanOrEqual(DESKTOP.height - 1e-6)
+  })
+})
+
+describe('the opaque bottom inset', () => {
+  const limits = flatLimits(MOBILE, INSET, MAX)
+  const centreY = (lon: number, lat: number, dLon: number, dLat: number, size = MOBILE, inset = INSET) => {
+    const p = flatProjection(size, inset)
+    const [a, b] = [p([lon - dLon / 2, lat - dLat / 2]), p([lon + dLon / 2, lat + dLat / 2])] as [[number, number], [number, number]]
+    const bounds: [[number, number], [number, number]] = [[Math.min(a[0], b[0]), Math.min(a[1], b[1])], [Math.max(a[0], b[0]), Math.max(a[1], b[1])]]
+    const l = flatLimits(size, inset, MAX)
+    const fit = frameCountry(widenBounds(bounds, spanWidth(l.bounds[1][0] - l.bounds[0][0], 30)), size, inset, 6, 0, l)
+    const c = p([lon, lat]) as [number, number]
+    return c[1] * fit.k + fit.y
+  }
+
+  it('lets the world bottom rise above the sheet, but not the top fall below the canvas top', () => {
+    const view = clampView({ k: limits.minK * 3, x: 0, y: -1e5 }, limits)
+    expect(view.k * limits.bounds[1][1] + view.y).toBeCloseTo(MOBILE.height - INSET.bottom)
+    const down = clampView({ k: limits.minK * 3, x: 0, y: 1e5 }, limits)
+    expect(down.k * limits.bounds[0][1] + down.y).toBeCloseTo(0)
+  })
+
+  it('frames New Zealand and Chile inside the clear band', () => {
+    for (const [lon, lat, dLon, dLat] of [[172, -41, 12, 13], [-71, -36, 10, 38]]) {
+      const y = centreY(lon, lat, dLon, dLat)
+      expect(y).toBeGreaterThan(INSET.top)
+      expect(y).toBeLessThan(MOBILE.height - INSET.bottom)
+    }
+  })
+
+  it('does not relax the bottom without an inset', () => {
+    expect(flatLimits(MOBILE, NO_INSET, MAX).bottom).toBe(0)
   })
 })

@@ -40,14 +40,19 @@ export type Bounds = [[number, number], [number, number]]
 
 export const NO_INSET: MapInset = { top: 0, right: 0, bottom: 0, left: 0 }
 
+/** The inset, or none when it leaves no room. */
+function usableInset({ width, height }: Size, inset: MapInset): MapInset {
+  const roomy = width - inset.left - inset.right > 40 && height - inset.top - inset.bottom > 40
+  return roomy ? inset : NO_INSET
+}
+
 /**
  * The flat map's Equal Earth projection at zoom 1, fitted to the canvas, or
  * to the part of it inside `inset` (falling back to the whole canvas when
  * the inset leaves no room).
  */
 export function flatProjection({ width, height }: Size, inset: MapInset = NO_INSET) {
-  const roomy = width - inset.left - inset.right > 40 && height - inset.top - inset.bottom > 40
-  const { top, right, bottom, left } = roomy ? inset : NO_INSET
+  const { top, right, bottom, left } = usableInset({ width, height }, inset)
   const x0 = left + FLAT_PAD
   const y0 = top + FLAT_PAD
   return geoEqualEarth().fitExtent(
@@ -56,25 +61,32 @@ export function flatProjection({ width, height }: Size, inset: MapInset = NO_INS
   )
 }
 
-/**
- * What keeps the flat map covering its canvas: the world's projected bounds
- * at zoom 1 (the pan limit, used as d3-zoom's `translateExtent`) and the zoom
- * range `[minK, maxK]`. `minK` is the "cover" scale, the smallest zoom at
- * which those bounds fill the whole canvas, so no empty space can be panned
- * or zoomed into view.
- *
- * The limits deliberately cover the *whole* canvas, not just the part inside
- * the inset: floating controls (search, sheet peek) are translucent or leave
- * gaps, and a clamp to the inset area alone would show empty strips under
- * and around them. The inset still shapes the zoom-1 projection (see
- * `flatProjection`), and so where the world sits and what "Fit" centres on.
- */
 /** The most the flat map zooms in (the +/- buttons and gestures). */
 export const FLAT_MAX_ZOOM = 12
 
+/**
+ * What keeps the flat map covering what the user can see: the world's
+ * projected bounds at zoom 1 and the zoom range `[minK, maxK]`. `minK` is the
+ * "cover" scale, the smallest zoom at which those bounds fill the visible
+ * canvas, so no empty map can be panned or zoomed into view. Used through
+ * `clampView` (d3-zoom's `constrain`), not `translateExtent`, so gestures and
+ * programmatic moves agree exactly.
+ *
+ * Top, left and right cover the whole canvas, including under the inset: the
+ * floating search band is translucent and leaves map visible beside it, so
+ * the world must reach the canvas edge there. The bottom is different: below
+ * `lg` the sheet peek is a full-width opaque panel, so an empty strip under it
+ * is never seen and the world's bottom edge may rise to the top of the inset
+ * (`bottom`), which lets southern countries (NZ, Chile) be framed in the
+ * clear band. The cover scale is computed for the visible height
+ * (canvas minus `bottom`). The inset also shapes the zoom-1 projection (see
+ * `flatProjection`), so where the world sits and what "Fit" centres on.
+ */
 export interface FlatLimits {
   size: Size
   bounds: Bounds
+  /** Height at the bottom of the canvas that is covered by opaque UI (0 if none). */
+  bottom: number
   minK: number
   maxK: number
 }
@@ -83,22 +95,23 @@ export interface FlatLimits {
 export function flatLimits(size: Size, inset: MapInset, maxZoom: number): FlatLimits {
   const bounds = geoPath(flatProjection(size, inset)).bounds({ type: 'Sphere' })
   const [[x0, y0], [x1, y1]] = bounds
-  const minK = Math.max(size.width / Math.max(1, x1 - x0), size.height / Math.max(1, y1 - y0))
-  return { size, bounds, minK, maxK: Math.max(maxZoom, minK) }
+  const { bottom } = usableInset(size, inset)
+  const minK = Math.max(size.width / Math.max(1, x1 - x0), (size.height - bottom) / Math.max(1, y1 - y0))
+  return { size, bounds, bottom, minK, maxK: Math.max(maxZoom, minK) }
 }
 
 const within = (v: number, lo: number, hi: number) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)))
 
-/** The nearest pan/zoom inside `limits`, so the canvas stays covered by the world. */
+/** The nearest pan/zoom inside `limits`, so the visible canvas stays covered by the world. */
 export function clampView(
   { k, x, y }: ViewTransform,
-  { size, bounds: [[x0, y0], [x1, y1]], minK, maxK }: FlatLimits,
+  { size, bounds: [[x0, y0], [x1, y1]], bottom, minK, maxK }: FlatLimits,
 ): ViewTransform {
   const kk = within(k, minK, maxK)
   return {
     k: kk,
     x: within(x, size.width - kk * x1, -kk * x0),
-    y: within(y, size.height - kk * y1, -kk * y0),
+    y: within(y, size.height - bottom - kk * y1, -kk * y0),
   }
 }
 
@@ -207,10 +220,9 @@ export function frameCountry(
 }
 
 /** Where the flat map draws with a pan/zoom transform applied. */
-export function flatFrame(
-  size: Size, t: ViewTransform, inset: MapInset = NO_INSET,
-): { scale: number; translate: [number, number] } {
-  const p = flatProjection(size, inset)
+export function flatFrame(size: Size, t: ViewTransform): { scale: number; translate: [number, number] } {
+  // Only the desktop morph uses this, and it has no inset.
+  const p = flatProjection(size)
   const [tx, ty] = p.translate()
   return { scale: p.scale() * t.k, translate: [tx * t.k + t.x, ty * t.k + t.y] }
 }

@@ -126,8 +126,11 @@ export function useFlatMap(options: FlatMapOptions) {
     const behavior = d3zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([limits.minK, limits.maxK])
       .extent([[0, 0], [size.width, size.height]])
-      // The world's own bounds: the canvas stays covered (see `FlatLimits`).
-      .translateExtent(limits.bounds)
+      // The world's own bounds, by the same clamp the fits use (see `FlatLimits`).
+      .constrain(transform => {
+        const { k, x, y } = clampView(transform, limits)
+        return zoomIdentity.translate(x, y).scale(k)
+      })
       // Only the user's own pans and zooms, not programmatic fits (they have no sourceEvent).
       .on('start', event => {
         if (!event.sourceEvent) return
@@ -143,6 +146,11 @@ export function useFlatMap(options: FlatMapOptions) {
         requestDraw()
       })
     const selection = select(canvas)
+    // A move under way was aimed with the old limits: drop it like a user gesture does,
+    // and play a pulse waiting on it now.
+    cancelAnimationFrame(fitAnim.current)
+    const waiting = pulse.current
+    if (waiting && waiting.start > performance.now()) waiting.start = performance.now()
     // d3's `transform` does not apply the extents, so the start view is clamped here:
     // one asked for earlier, else the current view carried across the resize, else the cover view.
     const prev = appliedLimits.current
