@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { clampSheetHeight, expandedHeight, isTap, SHEET_HEIGHT_VAR, snapExpanded } from '../lib/mobileSheet'
+import { inertOthers } from '../lib/usePanelFocus'
 
 interface MobileSheetProps {
   label: string
@@ -7,6 +8,11 @@ interface MobileSheetProps {
   onExpandedChange: (expanded: boolean) => void
   /** Collapsed height in px; omitted, the collapsed sheet fits its content. */
   collapsedHeight?: number
+  /**
+   * A modal dialog (see `sheetIsModal`): the rest of the page, bar the
+   * toasts, is inert and focus moves in. Escape is the panel's own.
+   */
+  modal?: boolean
   children: ReactNode
 }
 
@@ -28,9 +34,10 @@ interface Drag {
  * between snaps unless the viewer prefers reduced motion. Its current
  * height (while dragging and easing too) is published as the
  * `--sheet-height` CSS variable on <html>, so the `ToastStack` can sit
- * just above it.
+ * just above it. Collapsed, or showing the list, it is a plain region and
+ * the map stays usable; `modal`, it is a dialog over an inert page.
  */
-export default function MobileSheet({ label, expanded, onExpandedChange, collapsedHeight, children }: MobileSheetProps) {
+export default function MobileSheet({ label, expanded, onExpandedChange, collapsedHeight, modal, children }: MobileSheetProps) {
   const sheet = useRef<HTMLElement>(null)
   const drag = useRef<Drag | null>(null)
   const suppressClick = useRef(false)
@@ -49,6 +56,20 @@ export default function MobileSheet({ label, expanded, onExpandedChange, collaps
       root.style.removeProperty(SHEET_HEIGHT_VAR)
     }
   }, [])
+
+  // Modal: the page behind goes inert, and focus moves in if it is outside
+  // (to the panel's heading, else the handle). A layout effect, so the
+  // inert is undone before the sidebar returns focus on close.
+  useLayoutEffect(() => {
+    const el = sheet.current
+    if (!modal || !el) return
+    const restore = inertOthers(el)
+    if (!el.contains(document.activeElement)) {
+      const target = el.querySelector<HTMLElement>('h2[tabindex="-1"]') ?? el.querySelector<HTMLElement>('button')
+      target?.focus({ preventScroll: true })
+    }
+    return restore
+  }, [modal])
 
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     const el = sheet.current
@@ -110,6 +131,8 @@ export default function MobileSheet({ label, expanded, onExpandedChange, collaps
     <section
       ref={sheet}
       aria-label={label}
+      role={modal ? 'dialog' : undefined}
+      aria-modal={modal ? true : undefined}
       style={{ height }}
       className={`absolute inset-x-0 bottom-0 z-30 flex max-h-[calc(100dvh-88px)] flex-col overflow-hidden rounded-t-[20px] bg-white shadow-[0_-8px_30px_rgba(15,23,42,0.16)] ${
         dragHeight === null ? 'transition-[height] duration-300 ease-out motion-reduce:transition-none' : ''

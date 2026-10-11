@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { VisitedCountry } from '../types'
 import {
   SHEET_PEEK, clampSheetHeight, countrySummary, expandedHeight, formatVisitMonthLong, isTap,
-  mobileRowSubline, snapExpanded,
+  mobileRowSubline, sheetIsModal, snapExpanded,
 } from './mobileSheet'
 
 const c = (code: string, name: string, extra: Partial<VisitedCountry> = {}): VisitedCountry =>
@@ -34,6 +34,15 @@ describe('sheet geometry', () => {
     expect(isTap(3)).toBe(true)
     expect(isTap(-5)).toBe(true)
     expect(isTap(12)).toBe(false)
+  })
+})
+
+describe('sheetIsModal', () => {
+  it('is modal only when expanded with a country open', () => {
+    expect(sheetIsModal({ hasCountry: true, expanded: true })).toBe(true)
+    expect(sheetIsModal({ hasCountry: true, expanded: false })).toBe(false)
+    expect(sheetIsModal({ hasCountry: false, expanded: true })).toBe(false)
+    expect(sheetIsModal({ hasCountry: false, expanded: false })).toBe(false)
   })
 })
 

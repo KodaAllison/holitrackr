@@ -48,6 +48,17 @@ export function isTap(dy: number): boolean {
   return Math.abs(dy) < TAP_SLOP
 }
 
+/**
+ * Whether the sheet is a modal dialog: only when expanded over the map with
+ * a country open (its journal, or an unmarked country's mark panel). The
+ * list, at any height, and a collapsed country summary are not: the map
+ * above them stays in use (tap another country, pan, zoom), so they are a
+ * plain labelled region and nothing is trapped or made inert.
+ */
+export function sheetIsModal({ hasCountry, expanded }: { hasCountry: boolean; expanded: boolean }): boolean {
+  return hasCountry && expanded
+}
+
 /** Long label for a visit month, e.g. `2023-06` → "June 2023"; `null` if malformed. */
 export function formatVisitMonthLong(value: string | undefined): string | null {
   const parsed = parseVisitMonth(value)
