@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { geoOrthographic, type GeoProjection, type GeoStream } from 'd3-geo'
+import { geoOrthographic, type GeoStream } from 'd3-geo'
 import type { IndexedCountry } from './countryIndex'
 import { centerOf, decay, dragRotate, fitGlobe, turnTo, type LonLat, type Rotation } from './globeMotion'
 import { pickTarget } from './hitTest'
 import type { MapViewOptions } from './mapView'
+import { drawPulse } from './pulse'
 import { ShapeCache } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
 import { useMapInteraction } from './useMapInteraction'
@@ -26,7 +27,6 @@ const IDLE_MS = 4000
 /** A press that moves further than this (px) is a drag, not a click. */
 const CLICK_SLOP = 4
 const IDENTITY = { k: 1, x: 0, y: 0 }
-const PULSE_MS = 1400
 
 interface Turn {
   at: (t: number) => Rotation
@@ -115,30 +115,6 @@ export function useGlobeMap(options: GlobeMapOptions) {
     && !latest.current.selectedKey && !document.hidden
     && performance.now() - lastInput.current > IDLE_MS, [latest, reduced])
 
-  /** Expanding ring on a milestone country; returns true while still animating. */
-  const drawPulse = (ctx: CanvasRenderingContext2D, projection: GeoProjection, now: number): boolean => {
-    const p = pulse.current
-    if (!p || now < p.start) return p !== null
-    const u = (now - p.start) / PULSE_MS
-    if (u >= 1) {
-      pulse.current = null
-      return false
-    }
-    const at = projection(p.country.anchor)
-    if (!at) return true
-    for (const offset of [0, 0.35]) {
-      const v = u - offset
-      if (v < 0 || v > 0.65) continue
-      const t = v / 0.65
-      ctx.beginPath()
-      ctx.arc(at[0], at[1], 6 + 34 * t, 0, 2 * Math.PI)
-      ctx.strokeStyle = `rgba(11,122,83,${0.8 * (1 - t)})`
-      ctx.lineWidth = 3 * (1 - t) + 1
-      ctx.stroke()
-    }
-    return true
-  }
-
   const tick = useCallback((now: number) => {
     frame.current = 0
     const dt = Math.min(64, lastFrame.current ? now - lastFrame.current : 16)
@@ -171,7 +147,12 @@ export function useGlobeMap(options: GlobeMapOptions) {
       const ctx = drawFrame(canvasRef.current, {
         size, shapes, transform: IDENTITY, countries, rim: true, anchorCountries: opts.countries ?? countries,
       })
-      if (ctx) moving = drawPulse(ctx, projection, now) || moving
+      const p = pulse.current
+      if (ctx && p) {
+        const pulsing = drawPulse(ctx, projection(p.country.anchor), now - p.start)
+        if (!pulsing) pulse.current = null
+        moving ||= pulsing
+      }
     }
 
     if (moving) {

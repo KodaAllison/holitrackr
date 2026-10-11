@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { geoPath } from 'd3-geo'
 import { select } from 'd3-selection'
-import { zoom as d3zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom'
+import { zoom as d3zoom, zoomIdentity, type ZoomBehavior, type ZoomTransform } from 'd3-zoom'
+import { countryKey } from '../visitedCountries'
+import { mainland, type IndexedCountry } from './countryIndex'
 import { ease } from './globeMotion'
 import { pickTarget } from './hitTest'
 import type { MapViewOptions } from './mapView'
+import { drawPulse } from './pulse'
 import { ShapeCache, type ViewTransform } from './renderer'
 import { pointFrom, useCanvasSize } from './useCanvasSize'
 import { useMapInteraction } from './useMapInteraction'
-import { flatProjection, frameMarked, NO_INSET, spanWidth, type MapInset } from './views'
+import { flatProjection, frameCountry, frameMarked, NO_INSET, spanWidth, type MapInset } from './views'
 
 export interface FlatMapOptions extends MapViewOptions {
   /** Once the data is in, animate to fit the user's marked countries. */
@@ -26,11 +29,16 @@ export interface FlatMapOptions extends MapViewOptions {
 const MAX_ZOOM = 12
 const FIT_MAX_ZOOM = 6
 const FIT_MS = 750
+/** Focus frames a country at most this zoomed in, and at least this many degrees of longitude across. */
+const FOCUS_MAX_ZOOM = 6
+const FOCUS_MIN_SPAN = 30
+
+const toZoom = ({ k, x, y }: ViewTransform): ZoomTransform => zoomIdentity.translate(x, y).scale(k)
 
 /**
  * The flat (Equal Earth) map on a canvas: d3-zoom pan/zoom and on-demand
  * redraws (nothing runs while idle, so a hidden tab costs nothing).
- * Hit-testing, hover and "World view" come from the shared
+ * Hit-testing, hover, focus and "World view" come from the shared
  * `useMapInteraction` core.
  */
 export function useFlatMap(options: FlatMapOptions) {
@@ -40,6 +48,11 @@ export function useFlatMap(options: FlatMapOptions) {
   const frame = useRef(0)
   const zoomBehavior = useRef<ZoomBehavior<HTMLCanvasElement, unknown> | null>(null)
   const fitAnim = useRef(0)
+  /** A pan/zoom asked for before d3-zoom was set up, applied when it is. */
+  const pendingView = useRef<ZoomTransform | null>(null)
+  const pulse = useRef<{ country: IndexedCountry; start: number } | null>(null)
+  /** The opening fit has run, or a focus took its place. */
+  const fitted = useRef(false)
 
   const { top, right, bottom, left } = options.inset ?? NO_INSET
   const inset = useMemo(() => ({ top, right, bottom, left }), [top, right, bottom, left])
@@ -58,20 +71,44 @@ export function useFlatMap(options: FlatMapOptions) {
       return projection.invert?.([(x - t.x) / t.k, (y - t.y) / t.k]) ?? null
     },
     // "World view": back out to the whole map.
-    onWorldView: () => animateTo(zoomIdentity),
-    // Focus is the globe's for now.
-    onFocus: () => {},
+    onWorldView: () => { animateTo(zoomIdentity) },
+    // External focus (search, the list, a milestone): pan/zoom to the country.
+    onFocus: (country, target, fresh) => {
+      // One set before this view opened (e.g. on the globe) counts only while it is still open.
+      if (!fresh && countryKey(country.identity) !== latest.current.selectedKey) return
+      fitted.current = true
+      const fit = frameCountry(
+        geoPath(projection).bounds(mainland(country)), size, inset, FOCUS_MAX_ZOOM, spanWidth(worldWidth, FOCUS_MIN_SPAN),
+      )
+      const landsIn = animateTo(fit)
+      // Reduced motion: the move is instant and there's no pulse (the toast still shows).
+      if (target.pulse && !reduced.current) {
+        pulse.current = { country, start: performance.now() + landsIn }
+        requestDraw()
+      }
+    },
+    focusReady: size.width > 0,
   })
 
-  const draw = useCallback(() => {
+  // Frames always run the latest `draw`, so one scheduled before a resize uses the new size.
+  const drawRef = useRef<(now: number) => void>(() => {})
+  const requestDraw = useCallback(() => {
+    if (!frame.current) frame.current = requestAnimationFrame(now => drawRef.current(now))
+  }, [])
+
+  const draw = useCallback((now: number) => {
     frame.current = 0
     const { countries } = latest.current
-    if (countries) drawFrame(canvasRef.current, { size, shapes, transform: transform.current, countries })
-  }, [canvasRef, drawFrame, latest, shapes, size])
-
-  const requestDraw = useCallback(() => {
-    if (!frame.current) frame.current = requestAnimationFrame(draw)
-  }, [draw])
+    const t = transform.current
+    const ctx = countries && drawFrame(canvasRef.current, { size, shapes, transform: t, countries })
+    const p = pulse.current
+    if (!ctx || !p) return
+    const at = shapes.anchor(p.country)
+    // The milestone pulse keeps frames coming until it has finished.
+    if (drawPulse(ctx, at && [at[0] * t.k + t.x, at[1] * t.k + t.y], now - p.start)) requestDraw()
+    else pulse.current = null
+  }, [canvasRef, drawFrame, latest, requestDraw, shapes, size])
+  useEffect(() => { drawRef.current = draw })
 
   // Redraw only when something drawn changes, not on every pointer move.
   const { countries, statusOf, hoveredKey, selectedKey } = options
@@ -98,23 +135,30 @@ export function useFlatMap(options: FlatMapOptions) {
         requestDraw()
       })
     const selection = select(canvas)
-    selection.call(behavior).call(behavior.transform, zoomIdentity)
+    selection.call(behavior).call(behavior.transform, pendingView.current ?? zoomIdentity)
+    pendingView.current = null
     zoomBehavior.current = behavior
     return () => { selection.on('.zoom', null) }
   }, [canvasRef, latest, size, inset, requestDraw])
 
-  /** Animate the pan/zoom to `target` (instantly with reduced motion). */
-  const animateTo = useCallback((target: typeof zoomIdentity) => {
+  /**
+   * Animate the pan/zoom to `target` (instantly with reduced motion, or
+   * before the map is set up); returns how long until it lands, in ms.
+   */
+  const animateTo = useCallback((target: ViewTransform): number => {
     const canvas = canvasRef.current
     const behavior = zoomBehavior.current
-    if (!canvas || !behavior) return
+    if (!canvas || !behavior) {
+      pendingView.current = toZoom(target)
+      return 0
+    }
     const selection = select(canvas)
     const from = transform.current
-    if (reduced.current) {
-      selection.call(behavior.transform, target)
-      return
-    }
     cancelAnimationFrame(fitAnim.current)
+    if (reduced.current) {
+      selection.call(behavior.transform, toZoom(target))
+      return 0
+    }
     const start = performance.now()
     const step = (now: number) => {
       const u = ease(Math.min(1, (now - start) / FIT_MS))
@@ -124,6 +168,7 @@ export function useFlatMap(options: FlatMapOptions) {
       if (u < 1) fitAnim.current = requestAnimationFrame(step)
     }
     fitAnim.current = requestAnimationFrame(step)
+    return FIT_MS
   }, [canvasRef, reduced])
 
   /** Pan/zoom to frame the marked countries (the whole world if none). */
@@ -132,7 +177,7 @@ export function useFlatMap(options: FlatMapOptions) {
     if (!countries || size.width === 0) return
     const boxes = countries.filter(c => statusOf(c)).map(c => shapes.bounds(c))
     const fit = frameMarked(boxes, size, inset, FIT_MAX_ZOOM, spanWidth(worldWidth, minFitSpan ?? 0))
-    animateTo(zoomIdentity.translate(fit.x, fit.y).scale(fit.k))
+    animateTo(fit)
   }, [animateTo, latest, shapes, size, inset, worldWidth, minFitSpan])
 
   /** The +/- buttons: zoom about the centre, within the zoom limits. */
@@ -142,8 +187,7 @@ export function useFlatMap(options: FlatMapOptions) {
     if (canvas && behavior) select(canvas).call(behavior.scaleBy, factor)
   }, [canvasRef])
 
-  // Fit once, when the view opens with data and a size.
-  const fitted = useRef(false)
+  // Fit once, when the view opens with data and a size (unless a focus got there first).
   const ready = options.countries !== null && size.width > 0 && options.fitReady !== false
   useEffect(() => {
     if (!ready || fitted.current || !latest.current.fitOnOpen) return

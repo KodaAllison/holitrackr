@@ -54,6 +54,14 @@ function largestPolygon(geometry: Geometry): Polygon | null {
   return best
 }
 
+/**
+ * The country's largest landmass (France without French Guiana, the US
+ * without Alaska), for framing it; the whole feature when it has no polygons.
+ */
+export function mainland(country: IndexedCountry): Polygon | Feature<Geometry, GeoJsonProperties> {
+  return (country.feature.geometry && largestPolygon(country.feature.geometry)) ?? country.feature
+}
+
 export function buildCountryIndex(world: WorldFeatures): IndexedCountry[] {
   const index: IndexedCountry[] = []
   for (const feature of world.features) {

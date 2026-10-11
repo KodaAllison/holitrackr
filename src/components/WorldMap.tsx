@@ -37,7 +37,7 @@ interface WorldMapProps {
   welcome?: ReactNode
   /** Hide the how-to hint (e.g. while a toast sits in its place). */
   quiet?: boolean
-  /** Bring this country to the front (e.g. after picking it in search). */
+  /** Bring this country into view, on the globe or the flat map (e.g. after picking it in search). */
   focus?: { country: Country; seq: number; pulse?: boolean } | null
   /** Which marked countries to colour in (both when omitted); the desktop "Show" legend and mobile "Map filters" edit it. */
   mapFilter?: MapFilter
@@ -98,6 +98,7 @@ export default function WorldMap(props: WorldMapProps) {
     onPick: c => { setHovered(null); setInteracted(true); onSelectCountry?.(c.identity) },
     onMoveStart: () => setInteracted(true),
     worldViewSeq,
+    focus,
     onSelectedAnchor: label.place,
   }
 
@@ -149,7 +150,7 @@ export default function WorldMap(props: WorldMapProps) {
         />
       ) : view === 'globe' ? (
         <GlobeMapSurface
-          options={{ ...options, motionCountries, focus, initialView: savedGlobe.current, viewRef: globeView }}
+          options={{ ...options, motionCountries, initialView: savedGlobe.current, viewRef: globeView }}
           canFit={canFit}
           className={SURFACE}
         >
